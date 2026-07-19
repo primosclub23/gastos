@@ -159,6 +159,16 @@ y VPN Server —WireGuard/OpenVPN— nativos en UGOS Pro). Cuando se tenga:
   (para copias de seguridad `.json`), el parser de CSV fallaba con un
   mensaje confuso. Fix: el importador de CSV ahora detecta si el archivo
   es en realidad JSON y redirige automáticamente a la restauración.
+- **Divergencia de historial git (19 jul 2026).** En algún momento se subió
+  `index.html` directamente desde la web de GitHub (botón "Upload files"),
+  en vez de por `git push` desde la Mac. Eso creó un commit en `origin/main`
+  sin ningún ancestro común con el historial local, y el siguiente push
+  normal fue rechazado. Se resolvió con `git reset --hard origin/main` +
+  `cherry-pick` del commit que faltaba (sin pérdida de contenido, el archivo
+  ya era idéntico en ambos sitios). Regla a partir de ahora: `index.html`
+  SIEMPRE se actualiza vía `git push` desde Claude Code, nunca subiendo el
+  archivo a mano desde la web de GitHub — evita que el historial local y
+  el remoto se desincronicen.
 
 ## 9. Cosas a vigilar / deuda técnica conocida
 
