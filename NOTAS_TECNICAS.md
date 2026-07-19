@@ -182,3 +182,19 @@ y VPN Server —WireGuard/OpenVPN— nativos en UGOS Pro). Cuando se tenga:
 - No hay control de "quién guardó qué y cuándo" más allá del propio
   historial de commits de `gastos-data` (autor siempre es el dueño del
   token, no hay multi-usuario).
+
+## 10. Cómo mantener el Proyecto de Claude.ai al día
+
+Este archivo se lee desde un Proyecto de Claude.ai vía la integración nativa
+de GitHub (Project knowledge → conectar repositorio), NO subiéndolo a mano
+cada vez. Flujo:
+
+1. Claude Code actualiza NOTAS_TECNICAS.md localmente y hace push a GitHub
+   (repo `gastos`, público).
+2. En el Proyecto de Claude.ai, dentro de "Project knowledge", pulsar
+   "Sync now" para traer la versión más reciente del archivo.
+3. El sync es manual (no en tiempo real) — hay que acordarse de pulsarlo
+   tras cada push relevante a este archivo.
+
+Esto sustituye al método anterior de descargar el .md y volver a subirlo
+a mano al Proyecto.
