@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panorama · Control de Gastos</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,450;0,9..144,560;1,9..144,450&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          sand: '#F4F1EA', surface: '#FFFFFF', surfacealt: '#EDEAE1', border: '#E1DCD0',
+          ink: '#2C2A26', inkmuted: '#8A8477', good: '#6B8F71', bad: '#B15D4A',
+        },
+        fontFamily: {
+          display: ['Fraunces', 'serif'], body: ['Inter', 'sans-serif'], mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+
+<style>
+  html { background: #F4F1EA; }
+  body { font-family: 'Inter', sans-serif; color: #2C2A26; position: relative; }
+  .grain { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.05; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .card { background: #FFFFFF; border: 1px solid #E1DCD0; border-radius: 1.25rem; box-shadow: 0 1px 2px rgba(44,42,38,.03), 0 8px 24px -12px rgba(44,42,38,.06); }
+  .chip { transition: all .18s ease; border: 1px solid #E1DCD0; }
+  .chip:hover { border-color: #C9C2B2; }
+  .chip.active { color: #FFFFFF; border-color: transparent; }
+  .pill-tab { transition: all .2s ease; }
+  .pill-tab.active { background: #FFFFFF; box-shadow: 0 1px 3px rgba(44,42,38,.08); }
+  input::placeholder, textarea::placeholder { color: #ADA79A; }
+  .fade-in { animation: fadeIn .35s ease both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  table tbody tr { transition: background .15s ease; }
+  table tbody tr:hover { background: #F9F7F2; }
+  ::-webkit-scrollbar { height: 8px; width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #E1DCD0; border-radius: 8px; }
+  .focus-ring:focus-visible { outline: 2px solid #7C93A6; outline-offset: 2px; }
+  select.rowcat { border: none; background: transparent; font-size: 12px; color: #8A8477; cursor: pointer; }
+  .btn-primary { background: #2C2A26; color: #F4F1EA; }
+  .btn-primary:hover { background: #423F38; }
+  .btn-outline { border: 1px solid #E1DCD0; color: #2C2A26; }
+  .btn-outline:hover { border-color: #C9C2B2; background: #FBFAF7; }
+  .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+  .swatch.selected { border-color: #2C2A26; }
+  .modal-backdrop { background: rgba(44,42,38,.35); }
+  .toggle-btn { transition: all .15s ease; }
+  .toggle-btn.active { background: #2C2A26; color: #fff; }
+  .icon-btn { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; }
+  .icon-btn:hover { background: #F0EDE6; }
+  .icon-btn:disabled { opacity: .25; pointer-events: none; }
+</style>
+</head>
+
+<body class="min-h-screen">
+<div class="grain"></div>
+
+<div class="relative z-10 w-full px-5 sm:px-10 py-10">
+
+  <!-- ============ HEADER ============ -->
+  <header class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+    <div>
+      <p class="font-mono text-xs uppercase tracking-widest text-inkmuted mb-2">Hoy · 5 de julio de 2026</p>
+      <h1 class="font-display italic text-4xl sm:text-5xl text-ink" style="font-weight:450;">Panorama financiero</h1>
+      <p class="text-inkmuted mt-1.5 text-sm">Ingresos, gastos y ahorro — a tu manera. · <span id="syncStatus" class="font-mono text-xs">⚙ Sin configurar</span></p>
+    </div>
+    <div class="flex gap-2 flex-wrap justify-end">
+      <button id="btnSync" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Sincronización
+      </button>
+      <button id="btnManageCats" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="12" height="4" rx="1"/><rect x="3" y="16" width="15" height="4" rx="1"/></svg>
+        Categorías
+      </button>
+      <button id="btnRecurring" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l4 4-4 4M3 12v-2a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 12v2a4 4 0 0 1-4 4H3"/></svg>
+        Recurrentes
+      </button>
+      <button id="btnImport" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Importar CSV
+      </button>
+      <input id="fileInput" type="file" accept=".csv,.txt" class="hidden">
+      <button id="btnExport" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>
+        Exportar
+      </button>
+      <button id="btnImportData" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></svg>
+        Restaurar
+      </button>
+      <input id="jsonFileInput" type="file" accept=".json" class="hidden">
+      <button id="btnAddTx" class="btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Añadir movimiento
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ REMINDER BANNER ============ -->
+  <div id="reminderBanner" class="hidden mb-4"></div>
+
+  <!-- ============ PERIOD CONTROLS ============ -->
+  <div class="flex flex-wrap items-center gap-3 mb-6">
+    <div id="viewToggle" class="flex bg-surfacealt rounded-full p-1"></div>
+    <div id="yearTabs" class="flex bg-surfacealt rounded-full p-1"></div>
+    <div id="monthTabs" class="flex flex-wrap bg-surfacealt rounded-full p-1"></div>
+  </div>
+
+  <!-- ============ SEARCH + VISTA (filtro de categoría) ============ -->
+  <div class="card p-3 sm:p-3.5 mb-6 flex flex-col lg:flex-row gap-3 lg:items-center">
+    <div class="relative flex-1 min-w-[200px]">
+      <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-inkmuted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="searchInput" type="text" placeholder="Buscar por concepto… (ej. «mercadona»)"
+        class="focus-ring w-full font-mono text-sm rounded-full border border-border bg-sand/60 pl-10 pr-4 py-2.5 placeholder:text-sm focus:bg-white transition-colors" />
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="text-xs uppercase tracking-wide text-inkmuted font-medium mr-1 shrink-0">Vista</span>
+      <div id="viewFilterPills" class="flex gap-2 flex-wrap"></div>
+      <select id="categorySelect" class="focus-ring rounded-full border border-border bg-white px-3 py-2 text-xs font-medium text-ink"></select>
+    </div>
+  </div>
+
+  <div id="focusBanner" class="hidden mb-6 fade-in"></div>
+
+  <!-- ============ KPI CARDS ============ -->
+  <div id="kpiGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8"></div>
+
+  <!-- ============ CHARTS ============ -->
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-8">
+    <div class="card p-6 lg:col-span-2">
+      <h2 class="font-display text-lg text-ink" style="font-weight:560;">Desglose por categoría</h2>
+      <p id="doughnutCaption" class="text-xs text-inkmuted mb-4 mt-1">Haz clic en un sector para aislar esa categoría</p>
+      <div class="relative h-64"><canvas id="doughnutChart"></canvas></div>
+      <div id="doughnutLegend" class="mt-5 space-y-2"></div>
+    </div>
+    <div class="card p-6 lg:col-span-3">
+      <h2 id="barTitle" class="font-display text-lg text-ink" style="font-weight:560;">Evolución mensual del gasto</h2>
+      <p id="barCaption" class="text-xs text-inkmuted mb-4 mt-1">Comparativa por categoría</p>
+      <div class="relative h-72"><canvas id="barChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ============ TRANSACTIONS TABLE ============ -->
+  <div class="card p-6">
+    <div class="flex items-baseline justify-between mb-1">
+      <h2 class="font-display text-lg text-ink" style="font-weight:560;">Movimientos</h2>
+      <span id="txCount" class="font-mono text-xs text-inkmuted"></span>
+    </div>
+    <p class="text-xs text-inkmuted mb-4">Más recientes primero · ✎ edita · 🔁 indica un movimiento recurrente</p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs uppercase tracking-wide text-inkmuted border-b border-border">
+            <th class="py-2.5 pr-4 font-medium">Fecha</th>
+            <th class="py-2.5 pr-4 font-medium">Concepto</th>
+            <th class="py-2.5 pr-4 font-medium">Categoría</th>
+            <th class="py-2.5 pr-4 font-medium">Tipo</th>
+            <th class="py-2.5 pr-4 font-medium text-right">Importe</th>
+            <th class="py-2.5 pr-0 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody id="txBody" class="divide-y divide-border/70"></tbody>
+      </table>
+      <p id="emptyState" class="hidden text-center text-inkmuted text-sm py-10 font-mono">Todavía no hay movimientos aquí. Añade el primero con «Añadir movimiento».</p>
+    </div>
+  </div>
+
+  <footer class="text-center text-xs text-inkmuted mt-10 font-mono">Panorama · usa «Exportar» de vez en cuando para guardar una copia de tus datos</footer>
+</div>
+
+<div id="modalBackdrop" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+  <div id="modalCard" class="card w-full max-w-md p-6 relative bg-white"></div>
+</div>
+<div id="toast" class="hidden fixed bottom-6 right-6 z-50 card px-4 py-3 text-sm fade-in max-w-xs"></div>
+
+<script>
+/* =========================================================================
+   1) CATEGORIES (mutable — reorderable via `order`, soft-deletable via `deleted`)
+   ========================================================================= */
+let ORDER_SEQ = 100;
+const CATEGORIES = {
+  alimentacion:   { label: 'Alimentación',     color: '#8FA084', kind: 'expense', group: 'variable', order: 1, icon: 'M4 10c0 4.4 3.6 8 8 8s8-3.6 8-8H4Z M12 2v4 M8 4l1 3 M16 4l-1 3' },
+  fijos:          { label: 'Gastos Fijos',      color: '#B98D6F', kind: 'expense', group: 'fijo',     order: 1, icon: 'M3 11l9-7 9 7 M5 10v10h14V10' },
+  variables:      { label: 'Gastos Variables',  color: '#7C93A6', kind: 'expense', group: 'variable', order: 2, icon: 'M3 8h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8Z M3 8l2-4h14l2 4 M15 12a2 2 0 1 0 0 .01' },
+  ocio:           { label: 'Ocio',              color: '#A9899C', kind: 'expense', group: 'variable', order: 3, icon: 'M20 14.5A8 8 0 1 1 9.5 4a6.4 6.4 0 0 0 10.5 10.5Z' },
+  transporte:     { label: 'Transporte',        color: '#C7A15A', kind: 'expense', group: 'variable', order: 4, icon: 'M4 16V9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7 M2 16h20 M7 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M17 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z' },
+  suscripciones:  { label: 'Suscripciones',     color: '#96788A', kind: 'expense', group: 'fijo',     order: 2, icon: null },
+  nomina:         { label: 'Nómina',            color: '#6E8B6B', kind: 'income',  group: null,       order: 1, icon: 'M12 3v14 M6 11l6 6 6-6 M5 21h14' },
+  otros_ingresos: { label: 'Otros ingresos',    color: '#8FA6A0', kind: 'income',  group: null,       order: 2, icon: 'M12 3v14 M6 11l6 6 6-6 M5 21h14' },
+};
+const PALETTE = ['#8FA084','#B98D6F','#7C93A6','#A9899C','#C7A15A','#6E8B6B','#96788A','#6F8394','#D1A85C','#8FA6A0'];
+
+/* =========================================================================
+   2) DATES / HELPERS
+   ========================================================================= */
+const TODAY = '2026-07-05';
+const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+function normalize(str) { return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function fmtEUR(n) { const s = n < 0 ? '-' : ''; return s + Math.abs(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; }
+function pad2(n) { return String(n).padStart(2, '0'); }
+function monthKey(d) { return d.slice(0, 7); }
+function yearKey(d) { return d.slice(0, 4); }
+function monthLabel(mk) { const m = parseInt(mk.split('-')[1], 10); return MONTH_NAMES[m - 1].slice(0, 3); }
+function fullMonthLabel(mk) { const [y, m] = mk.split('-'); return `${MONTH_NAMES[parseInt(m,10)-1]} ${y}`; }
+function daysInMonth(mk) { const [y, m] = mk.split('-').map(Number); return new Date(y, m, 0).getDate(); }
+function addMonths(mk, n) { let [y, m] = mk.split('-').map(Number); const total = y * 12 + (m - 1) + n; const ny = Math.floor(total / 12), nm = total % 12 + 1; return `${ny}-${pad2(nm)}`; }
+function toUTC(dateStr) { const [y, m, d] = dateStr.split('-').map(Number); return Date.UTC(y, m - 1, d); }
+function daysBetween(a, b) { return Math.round((toUTC(b) - toUTC(a)) / 86400000); }
+function catIconSVG(cat, size) {
+  size = size || 16;
+  if (cat.icon) return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${cat.color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${cat.icon}"/></svg>`;
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;border-radius:50%;background:${cat.color}22;color:${cat.color};font-size:${Math.round(size*0.55)}px;font-weight:700;">${cat.label.charAt(0).toUpperCase()}</span>`;
+}
+function slugify(label, dict) {
+  let base = normalize(label).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
+  let key = base, i = 1;
+  while (dict[key]) key = base + '_' + (++i);
+  return key;
+}
+function categoriesInGroup(kind, group) {
+  return Object.entries(CATEGORIES)
+    .filter(([, c]) => !c.deleted && c.kind === kind && (kind !== 'expense' || c.group === group))
+    .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+}
+function categoryOptionsForKind(kind, selectedKey) {
+  if (kind !== 'expense') return categoriesInGroup(kind, null).map(([k, c]) => `<option value="${k}" ${k===selectedKey?'selected':''}>${c.label}</option>`).join('');
+  const optgroup = (label, arr) => arr.length ? `<optgroup label="${label}">${arr.map(([k, c]) => `<option value="${k}" ${k===selectedKey?'selected':''}>${c.label}</option>`).join('')}</optgroup>` : '';
+  return optgroup('Fijos', categoriesInGroup('expense', 'fijo')) + optgroup('Variables', categoriesInGroup('expense', 'variable'));
+}
+
+/* =========================================================================
+   3) RECURRING SERIES + ONE-OFF TRANSACTIONS — empezamos limpio en julio 2026
+   ========================================================================= */
+let TX_SEQ = 0, REC_SEQ = 0;
+function mkTx(date, concept, cat, freq, amount, seriesId) { return { id: ++TX_SEQ, date, concept, cat, freq, amount, seriesId: seriesId || null }; }
+function mkSeries(concept, cat, amount, startDate, endDate, reminderDays) {
+  return { id: ++REC_SEQ, concept, cat, amount, dayOfMonth: parseInt(startDate.split('-')[2], 10), startDate, endDate: endDate || null, reminderDays: reminderDays != null ? reminderDays : null };
+}
+
+let TRANSACTIONS = [];  // sin datos de ejemplo — listo para tus movimientos reales
+let RECURRING = [];     // añade aquí tus fijos (alquiler, nómina, suscripciones…) desde "Añadir movimiento" o "Recurrentes"
+
+function generateSeriesTx(s) {
+  const out = [];
+  const endMonth = s.endDate ? monthKey(s.endDate) : monthKey(TODAY);
+  let cursor = monthKey(s.startDate);
+  if (endMonth < cursor) return out;
+  while (true) {
+    const day = Math.min(s.dayOfMonth, daysInMonth(cursor));
+    const dateStr = `${cursor}-${pad2(day)}`;
+    if (dateStr >= s.startDate && (!s.endDate || dateStr <= s.endDate)) out.push(mkTx(dateStr, s.concept, s.cat, 'Fijo', s.amount, s.id));
+    if (cursor === endMonth) break;
+    cursor = addMonths(cursor, 1);
+  }
+  return out;
+}
+function regenerateAllRecurring() {
+  for (let i = TRANSACTIONS.length - 1; i >= 0; i--) if (TRANSACTIONS[i].seriesId) TRANSACTIONS.splice(i, 1);
+  RECURRING.forEach(s => TRANSACTIONS.push(...generateSeriesTx(s)));
+}
+function getUpcomingReminders() {
+  return RECURRING
+    .filter(s => s.endDate && s.reminderDays != null)
+    .map(s => ({ ...s, daysLeft: daysBetween(TODAY, s.endDate) }))
+    .filter(s => s.daysLeft >= 0 && s.daysLeft <= s.reminderDays)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+}
+
+/* =========================================================================
+   4) PERIOD + FILTER STATE
+   ========================================================================= */
+function getAllMonthsSorted() { const s = new Set(TRANSACTIONS.map(t => monthKey(t.date))); s.add(monthKey(TODAY)); return [...s].sort(); }
+function getAllYearsSorted() { const s = new Set(TRANSACTIONS.map(t => yearKey(t.date))); s.add(yearKey(TODAY)); return [...s].sort(); }
+function getMonthsInYear(year) { return getAllMonthsSorted().filter(m => m.startsWith(year)); }
+
+// state.filter: {type:'all'} | {type:'group', value:'fijo'|'variable'} | {type:'category', value:catKey}
+const state = { viewMode: 'month', year: yearKey(TODAY), month: monthKey(TODAY), filter: { type: 'all', value: null }, query: '', dismissedReminders: new Set(), popupSeenIds: new Set() };
+let doughnutChart, barChart;
+
+function categoryFilterPredicate() {
+  if (state.filter.type === 'category') { const key = state.filter.value; return t => t.cat === key; }
+  if (state.filter.type === 'group') { const g = state.filter.value; return t => CATEGORIES[t.cat] && CATEGORIES[t.cat].kind === 'expense' && CATEGORIES[t.cat].group === g; }
+  return null;
+}
+function setFilter(type, value) { state.filter = { type, value }; syncFilterBar(); render(); }
+
+function txForPeriod() { return state.viewMode === 'month' ? TRANSACTIONS.filter(t => monthKey(t.date) === state.month) : TRANSACTIONS.filter(t => yearKey(t.date) === state.year); }
+function txForPreviousPeriod() {
+  if (state.viewMode === 'month') { const months = getAllMonthsSorted(); const idx = months.indexOf(state.month); return idx > 0 ? TRANSACTIONS.filter(t => monthKey(t.date) === months[idx - 1]) : null; }
+  const years = getAllYearsSorted(); const idx = years.indexOf(state.year); return idx > 0 ? TRANSACTIONS.filter(t => yearKey(t.date) === years[idx - 1]) : null;
+}
+function totals(list) {
+  const income = list.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const expense = list.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  return { income, expense, savings: income - expense };
+}
+function pctChange(curr, prev) { if (prev === null || prev === 0) return null; return ((curr - prev) / Math.abs(prev)) * 100; }
+function periodLabel() { return state.viewMode === 'month' ? fullMonthLabel(state.month) : state.year; }
+
+/* =========================================================================
+   5) PERIOD CONTROLS UI
+   ========================================================================= */
+function buildViewToggle() {
+  const el = document.getElementById('viewToggle');
+  el.innerHTML = ['month', 'year'].map(v => `<button data-view="${v}" class="pill-tab font-mono text-sm px-4 py-1.5 rounded-full text-inkmuted ${state.viewMode===v?'active text-ink':''}">${v==='month'?'Mensual':'Anual'}</button>`).join('');
+  el.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => { state.viewMode = btn.dataset.view; buildPeriodTabs(); render(); }));
+}
+function buildPeriodTabs() {
+  const years = getAllYearsSorted();
+  if (!years.includes(state.year)) state.year = years[years.length - 1];
+  const yEl = document.getElementById('yearTabs');
+  yEl.innerHTML = years.map(y => `<button data-year="${y}" class="pill-tab font-mono text-sm px-4 py-1.5 rounded-full text-inkmuted ${state.year===y?'active text-ink':''}">${y}</button>`).join('');
+  yEl.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+    state.year = btn.dataset.year;
+    const months = getMonthsInYear(state.year);
+    if (!months.includes(state.month)) state.month = months[months.length - 1];
+    buildPeriodTabs(); render();
+  }));
+  const mEl = document.getElementById('monthTabs');
+  if (state.viewMode === 'month') {
+    const months = getMonthsInYear(state.year);
+    if (!months.includes(state.month)) state.month = months[months.length - 1];
+    mEl.classList.remove('hidden');
+    mEl.innerHTML = months.map(m => `<button data-month="${m}" class="pill-tab font-mono text-sm px-4 py-1.5 rounded-full text-inkmuted capitalize ${state.month===m?'active text-ink':''}">${monthLabel(m)}</button>`).join('');
+    mEl.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => { state.month = btn.dataset.month; syncControls(); render(); }));
+  } else { mEl.classList.add('hidden'); mEl.innerHTML = ''; }
+}
+function syncControls() {
+  document.querySelectorAll('#viewToggle button').forEach(b => { b.classList.toggle('active', b.dataset.view === state.viewMode); b.classList.toggle('text-ink', b.dataset.view === state.viewMode); });
+  document.querySelectorAll('#yearTabs button').forEach(b => { b.classList.toggle('active', b.dataset.year === state.year); b.classList.toggle('text-ink', b.dataset.year === state.year); });
+  document.querySelectorAll('#monthTabs button').forEach(b => { b.classList.toggle('active', b.dataset.month === state.month); b.classList.toggle('text-ink', b.dataset.month === state.month); });
+}
+
+/* =========================================================================
+   6) VISTA (filtro por categoría/grupo) — sustituye al antiguo banner de chips
+   ========================================================================= */
+function buildFilterBar() {
+  const pillsEl = document.getElementById('viewFilterPills');
+  const pills = [
+    { type: 'all', value: null, label: 'Todo', color: '#2C2A26' },
+    { type: 'group', value: 'fijo', label: 'Gastos Fijos', color: '#B98D6F' },
+    { type: 'group', value: 'variable', label: 'Gastos Variables', color: '#7C93A6' },
+  ];
+  pillsEl.innerHTML = pills.map((p, i) => `<button data-pill="${i}" class="chip rounded-full px-3 py-1.5 text-xs font-medium text-ink bg-white">${p.label}</button>`).join('');
+  pillsEl.querySelectorAll('[data-pill]').forEach(btn => btn.addEventListener('click', () => { const p = pills[+btn.dataset.pill]; setFilter(p.type, p.value); }));
+  pillsEl._pills = pills;
+
+  const sel = document.getElementById('categorySelect');
+  const opt = (label, arr) => arr.length ? `<optgroup label="${label}">${arr.map(([k, c]) => `<option value="${k}">${c.label}</option>`).join('')}</optgroup>` : '';
+  sel.innerHTML = `<option value="">Categoría específica…</option>` + opt('Fijos', categoriesInGroup('expense', 'fijo')) + opt('Variables', categoriesInGroup('expense', 'variable')) + opt('Ingresos', categoriesInGroup('income', null));
+  sel.onchange = () => { if (sel.value) setFilter('category', sel.value); else setFilter('all', null); };
+  syncFilterBar();
+}
+function syncFilterBar() {
+  const pillsEl = document.getElementById('viewFilterPills');
+  const pills = pillsEl._pills || [];
+  pillsEl.querySelectorAll('[data-pill]').forEach((btn, i) => {
+    const p = pills[i];
+    const active = state.filter.type === p.type && state.filter.value === p.value;
+    btn.classList.toggle('active', active);
+    btn.style.background = active ? p.color : '#FFFFFF';
+  });
+  const sel = document.getElementById('categorySelect');
+  sel.value = state.filter.type === 'category' ? state.filter.value : '';
+}
+function selectCategoryFilter(key) {
+  if (state.filter.type === 'category' && state.filter.value === key) setFilter('all', null);
+  else setFilter('category', key);
+}
+function handleSearchInput(raw) { state.query = raw; render(); }
+
+/* =========================================================================
+   7) REMINDER BANNER + POPUP
+   ========================================================================= */
+function renderReminderBanner() {
+  const el = document.getElementById('reminderBanner');
+  const items = getUpcomingReminders().filter(s => !state.dismissedReminders.has(s.id));
+  if (items.length === 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.classList.remove('hidden');
+  el.innerHTML = items.map(s => `
+    <div class="card px-4 py-3 flex flex-wrap items-center justify-between gap-3 mb-2" style="border-color:${(CATEGORIES[s.cat]||{color:'#8A8477'}).color}55;">
+      <div class="flex items-center gap-3"><span class="text-lg">⏰</span><p class="text-sm text-ink"><strong>${s.concept}</strong> finaliza el ${new Date(s.endDate).toLocaleDateString('es-ES')} · en ${s.daysLeft} día${s.daysLeft===1?'':'s'}</p></div>
+      <div class="flex gap-3 items-center"><button data-renew="${s.id}" class="text-xs font-medium text-good underline">Renovar (indefinido)</button><button data-dismiss="${s.id}" class="text-inkmuted hover:text-ink text-xs">✕</button></div>
+    </div>`).join('');
+  el.querySelectorAll('[data-dismiss]').forEach(b => b.addEventListener('click', () => { state.dismissedReminders.add(parseInt(b.dataset.dismiss, 10)); renderReminderBanner(); }));
+  el.querySelectorAll('[data-renew]').forEach(b => b.addEventListener('click', () => {
+    const s = RECURRING.find(r => r.id === parseInt(b.dataset.renew, 10));
+    if (s) { s.endDate = null; s.reminderDays = null; regenerateAllRecurring(); buildPeriodTabs(); render(); showToast(`"${s.concept}" ahora es indefinido.`); }
+  }));
+}
+function maybeShowReminderPopup() {
+  const items = getUpcomingReminders().filter(s => !state.popupSeenIds.has(s.id));
+  if (items.length === 0) return;
+  items.forEach(s => state.popupSeenIds.add(s.id));
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  card.innerHTML = `
+    <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+    <h3 class="font-display text-xl mb-2" style="font-weight:560;">⏰ Recordatorio</h3>
+    <p class="text-sm text-inkmuted mb-4">Tienes ${items.length} movimiento${items.length===1?'':'s'} recurrente${items.length===1?'':'s'} a punto de finalizar:</p>
+    <div class="space-y-2 mb-5">${items.map(s => `<div class="flex items-center gap-2 text-sm"><span class="w-2 h-2 rounded-full" style="background:${(CATEGORIES[s.cat]||{color:'#8A8477'}).color}"></span><strong>${s.concept}</strong> · finaliza el ${new Date(s.endDate).toLocaleDateString('es-ES')} (en ${s.daysLeft} día${s.daysLeft===1?'':'s'})</div>`).join('')}</div>
+    <button id="mOk" class="btn-primary w-full rounded-full py-2.5 text-sm font-medium">Entendido</button>`;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  document.getElementById('mOk').addEventListener('click', closeModal);
+  backdrop.classList.remove('hidden');
+}
+
+/* =========================================================================
+   8) KPI CARDS + FOCUS BANNER
+   ========================================================================= */
+function renderKPIs() {
+  const list = txForPeriod();
+  const prevList = txForPreviousPeriod();
+  const t = totals(list);
+  const prevT = prevList ? totals(prevList) : null;
+  const inProgressNote = (state.viewMode === 'month' && state.month === monthKey(TODAY)) ? 'Mes en curso · hasta el 5 de julio' : `vs. ${state.viewMode==='month'?'mes':'año'} anterior`;
+
+  const fijosTotal = list.filter(t => t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'fijo').reduce((s, t) => s + Math.abs(t.amount), 0);
+  const variablesTotal = list.filter(t => t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'variable').reduce((s, t) => s + Math.abs(t.amount), 0);
+  const prevFijosTotal = prevList ? prevList.filter(t => t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'fijo').reduce((s, t) => s + Math.abs(t.amount), 0) : null;
+  const prevVariablesTotal = prevList ? prevList.filter(t => t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'variable').reduce((s, t) => s + Math.abs(t.amount), 0) : null;
+
+  const cards = [
+    { label: 'Ingresos', value: fmtEUR(t.income), delta: pctChange(t.income, prevT ? prevT.income : null), goodUp: true, sub: inProgressNote },
+    { label: 'Gastos', value: fmtEUR(-t.expense), delta: pctChange(t.expense, prevT ? prevT.expense : null), goodUp: false, sub: periodLabel() },
+    { label: 'Gastos Fijos', value: fmtEUR(-fijosTotal), delta: pctChange(fijosTotal, prevFijosTotal), goodUp: false, sub: periodLabel() },
+    { label: 'Gastos Variables', value: fmtEUR(-variablesTotal), delta: pctChange(variablesTotal, prevVariablesTotal), goodUp: false, sub: periodLabel() },
+  ];
+  document.getElementById('kpiGrid').innerHTML = cards.map(k => {
+    let deltaHtml = '<span class="text-xs text-inkmuted font-mono">—</span>';
+    if (k.delta !== null && k.delta !== undefined && !isNaN(k.delta)) {
+      const isGood = k.goodUp ? k.delta > 0 : k.delta < 0;
+      deltaHtml = `<span class="text-xs font-mono ${isGood ? 'text-good' : 'text-bad'}">${k.delta > 0 ? '↑' : '↓'} ${Math.abs(k.delta).toFixed(1)}%</span>`;
+    }
+    return `<div class="card p-5 fade-in"><p class="text-xs uppercase tracking-wide text-inkmuted font-medium">${k.label}</p><div class="flex items-baseline gap-2 mt-2"><p class="font-display text-2xl text-ink" style="font-weight:500;">${k.value}</p>${deltaHtml}</div><p class="text-xs text-inkmuted mt-1.5">${k.sub}</p></div>`;
+  }).join('');
+
+  const banner = document.getElementById('focusBanner');
+  if (state.filter.type === 'category') {
+    const cat = CATEGORIES[state.filter.value];
+    const catTotal = list.filter(x => x.cat === state.filter.value).reduce((s, x) => s + Math.abs(x.amount), 0);
+    const base = cat.kind === 'income' ? t.income : t.expense;
+    const share = base > 0 ? (catTotal / base) * 100 : 0;
+    banner.classList.remove('hidden');
+    banner.innerHTML = `<div class="card p-4 flex items-center justify-between" style="border-color:${cat.color}55;">
+      <div class="flex items-center gap-3"><span class="w-8 h-8 rounded-full flex items-center justify-center" style="background:${cat.color}22;">${catIconSVG(cat, 16)}</span>
+      <div><p class="text-sm font-medium text-ink">Detalle: ${cat.label}</p><p class="text-xs text-inkmuted">${fmtEUR(cat.kind==='income'?catTotal:-catTotal)} en ${periodLabel()} · ${share.toFixed(0)}% del ${cat.kind==='income'?'ingreso':'gasto'} del periodo</p></div></div>
+      <button id="clearFocus" class="font-mono text-xs text-inkmuted hover:text-ink underline">Quitar filtro</button></div>`;
+    document.getElementById('clearFocus').addEventListener('click', () => setFilter('all', null));
+  } else if (state.filter.type === 'group') {
+    const g = state.filter.value;
+    const gTotal = g === 'fijo' ? fijosTotal : variablesTotal;
+    const share = t.expense > 0 ? (gTotal / t.expense) * 100 : 0;
+    const color = g === 'fijo' ? '#B98D6F' : '#7C93A6';
+    banner.classList.remove('hidden');
+    banner.innerHTML = `<div class="card p-4 flex items-center justify-between" style="border-color:${color}55;">
+      <div class="flex items-center gap-3"><span class="w-8 h-8 rounded-full flex items-center justify-center" style="background:${color}22; color:${color}; font-weight:700; font-size:13px;">${g==='fijo'?'F':'V'}</span>
+      <div><p class="text-sm font-medium text-ink">Detalle: Gastos ${g==='fijo'?'Fijos':'Variables'}</p><p class="text-xs text-inkmuted">${fmtEUR(-gTotal)} en ${periodLabel()} · ${share.toFixed(0)}% del gasto del periodo</p></div></div>
+      <button id="clearFocus" class="font-mono text-xs text-inkmuted hover:text-ink underline">Quitar filtro</button></div>`;
+    document.getElementById('clearFocus').addEventListener('click', () => setFilter('all', null));
+  } else { banner.classList.add('hidden'); banner.innerHTML = ''; }
+}
+
+/* =========================================================================
+   9) DOUGHNUT CHART
+   ========================================================================= */
+function renderDoughnut() {
+  const list = txForPeriod().filter(t => t.amount < 0);
+  const keys = categoriesInGroup('expense', 'fijo').concat(categoriesInGroup('expense', 'variable')).map(([k]) => k);
+  const values = keys.map(k => list.filter(t => t.cat === k).reduce((s, t) => s + Math.abs(t.amount), 0));
+  const colors = keys.map(k => CATEGORIES[k].color);
+  const isKeyActive = (k) => state.filter.type === 'category' ? k === state.filter.value : (state.filter.type === 'group' ? CATEGORIES[k].group === state.filter.value : null);
+  const anyActive = state.filter.type !== 'all';
+  const offsets = keys.map(k => (state.filter.type === 'category' && isKeyActive(k)) ? 14 : 0);
+  const bgColors = keys.map((k, i) => !anyActive ? colors[i] : (isKeyActive(k) ? colors[i] : colors[i] + '33'));
+  document.getElementById('doughnutCaption').textContent = anyActive
+    ? 'Mostrando el filtro activo · clic en un sector para aislar esa categoría' : 'Haz clic en un sector para aislar esa categoría';
+  if (doughnutChart) doughnutChart.destroy();
+  const ctx = document.getElementById('doughnutChart').getContext('2d');
+  doughnutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels: keys.map(k => CATEGORIES[k].label), datasets: [{ data: values, backgroundColor: bgColors, offset: offsets, borderWidth: 0, borderRadius: 6, spacing: 3, hoverOffset: 16 }] },
+    options: { cutout: '66%', plugins: { legend: { display: false }, tooltip: { backgroundColor: '#2C2A26', padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, callbacks: { label: (c) => ' ' + fmtEUR(-c.parsed) } } }, onClick: (evt, els) => { if (els.length) selectCategoryFilter(keys[els[0].index]); }, animation: { duration: 500, easing: 'easeOutQuart' } },
+  });
+  const totalP = values.reduce((a, b) => a + b, 0);
+  document.getElementById('doughnutLegend').innerHTML = keys.map((k, i) => {
+    const pct = totalP > 0 ? (values[i] / totalP * 100) : 0;
+    const dim = anyActive && !isKeyActive(k);
+    return `<div class="flex items-center justify-between text-sm ${dim ? 'opacity-40' : ''}"><span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:${colors[i]}"></span><span class="text-ink">${CATEGORIES[k].label}</span></span><span class="font-mono text-xs text-inkmuted">${fmtEUR(-values[i])} · ${pct.toFixed(0)}%</span></div>`;
+  }).join('');
+}
+
+/* =========================================================================
+   10) BAR CHART
+   ========================================================================= */
+function barOptions(tooltipLabel, stacked) {
+  return { responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: !!stacked, position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, font: { family: 'Inter', size: 11 }, color: '#8A8477' } }, tooltip: { backgroundColor: '#2C2A26', padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, callbacks: { label: tooltipLabel } } },
+    scales: { x: { stacked: !!stacked, grid: { display: false }, ticks: { font: { family: 'Inter', size: 12 }, color: '#8A8477' } }, y: { stacked: !!stacked, grid: { color: '#EDEAE1' }, ticks: { font: { family: 'JetBrains Mono', size: 11 }, color: '#8A8477', callback: (v) => v + '€' } } },
+    animation: { duration: 450, easing: 'easeOutQuart' } };
+}
+function renderBar() {
+  const months = getMonthsInYear(state.year);
+  const title = document.getElementById('barTitle'), caption = document.getElementById('barCaption');
+  if (barChart) barChart.destroy();
+  const ctx = document.getElementById('barChart').getContext('2d');
+
+  if (state.filter.type === 'category') {
+    const cat = CATEGORIES[state.filter.value];
+    title.textContent = `Evolución de ${cat.label}`; caption.textContent = `A lo largo de ${state.year}`;
+    const values = months.map(m => TRANSACTIONS.filter(t => monthKey(t.date) === m && t.cat === state.filter.value).reduce((s, t) => s + Math.abs(t.amount), 0));
+    barChart = new Chart(ctx, { type: 'bar', data: { labels: months.map(monthLabel), datasets: [{ label: cat.label, data: values, backgroundColor: months.map(m => (state.viewMode==='month' && m===state.month) ? cat.color : cat.color + '77'), borderRadius: 8, maxBarThickness: 64 }] }, options: barOptions((c) => ' ' + fmtEUR(cat.kind==='income'?c.parsed.y:-c.parsed.y)) });
+  } else if (state.filter.type === 'group') {
+    const g = state.filter.value;
+    const color = g === 'fijo' ? '#B98D6F' : '#7C93A6';
+    title.textContent = `Evolución de Gastos ${g==='fijo'?'Fijos':'Variables'}`; caption.textContent = `A lo largo de ${state.year}`;
+    const values = months.map(m => TRANSACTIONS.filter(t => monthKey(t.date) === m && t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === g).reduce((s, t) => s + Math.abs(t.amount), 0));
+    barChart = new Chart(ctx, { type: 'bar', data: { labels: months.map(monthLabel), datasets: [{ label: `Gastos ${g==='fijo'?'Fijos':'Variables'}`, data: values, backgroundColor: months.map(m => (state.viewMode==='month' && m===state.month) ? color : color + '77'), borderRadius: 8, maxBarThickness: 64 }] }, options: barOptions((c) => ' ' + fmtEUR(-c.parsed.y)) });
+  } else {
+    title.textContent = 'Evolución mensual del gasto'; caption.textContent = `Comparativa por categoría en ${state.year}`;
+    const keys = categoriesInGroup('expense', 'fijo').concat(categoriesInGroup('expense', 'variable')).map(([k]) => k);
+    barChart = new Chart(ctx, { type: 'bar', data: { labels: months.map(monthLabel), datasets: keys.map(k => ({ label: CATEGORIES[k].label, data: months.map(m => TRANSACTIONS.filter(t => monthKey(t.date) === m && t.cat === k).reduce((s, t) => s + Math.abs(t.amount), 0)), backgroundColor: CATEGORIES[k].color, borderRadius: 6, maxBarThickness: 46 })) }, options: barOptions((c) => ` ${c.dataset.label}: ${fmtEUR(-c.parsed.y)}`, true) });
+  }
+}
+
+/* =========================================================================
+   11) TRANSACTIONS TABLE
+   ========================================================================= */
+function renderTable() {
+  let rows = [...txForPeriod()].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const pred = categoryFilterPredicate();
+  if (pred) rows = rows.filter(pred);
+  if (state.query.trim() !== '') { const q = normalize(state.query.trim()); rows = rows.filter(t => normalize(t.concept).includes(q)); }
+  document.getElementById('txCount').textContent = `${rows.length} movimiento${rows.length === 1 ? '' : 's'}`;
+  const body = document.getElementById('txBody'), empty = document.getElementById('emptyState');
+  if (rows.length === 0) { body.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  body.innerHTML = rows.map(t => {
+    const dateFmt = new Date(t.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+    const tagColor = t.freq === 'Fijo' ? '#7C93A6' : '#C7A15A';
+    const kind = t.amount >= 0 ? 'income' : 'expense';
+    const isRec = !!t.seriesId;
+    const catCell = isRec
+      ? `<span class="inline-flex items-center gap-1.5 text-xs text-inkmuted"><span class="w-2 h-2 rounded-full" style="background:${CATEGORIES[t.cat].color}"></span>${CATEGORIES[t.cat].label}</span>`
+      : `<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:${CATEGORIES[t.cat].color}"></span><select class="rowcat focus-ring" data-id="${t.id}">${categoryOptionsForKind(kind, t.cat)}</select></span>`;
+    const actionCell = isRec
+      ? `<button data-recur="${t.id}" title="Movimiento recurrente — gestionar" class="text-inkmuted hover:text-ink text-xs">🔁</button>`
+      : `<button data-edit="${t.id}" title="Editar" class="text-inkmuted hover:text-ink text-xs mr-3">✎</button><button data-del="${t.id}" class="text-inkmuted hover:text-bad text-xs">✕</button>`;
+    return `<tr>
+      <td class="py-3 pr-4 font-mono text-xs text-inkmuted whitespace-nowrap">${dateFmt}</td>
+      <td class="py-3 pr-4 text-ink">${t.concept}</td>
+      <td class="py-3 pr-4">${catCell}</td>
+      <td class="py-3 pr-4"><span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background:${tagColor}1A; color:${tagColor};">${t.freq}</span></td>
+      <td class="py-3 pr-4 text-right font-mono text-sm text-ink whitespace-nowrap">${fmtEUR(t.amount)}</td>
+      <td class="py-3 pr-0 text-right">${actionCell}</td>
+    </tr>`;
+  }).join('');
+  body.querySelectorAll('select.rowcat').forEach(sel => sel.addEventListener('change', () => { const tx = TRANSACTIONS.find(t => t.id === parseInt(sel.dataset.id, 10)); if (tx) { tx.cat = sel.value; render(); } }));
+  body.querySelectorAll('button[data-edit]').forEach(btn => btn.addEventListener('click', () => openEditTransactionModal(parseInt(btn.dataset.edit, 10))));
+  body.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => { const idx = TRANSACTIONS.findIndex(t => t.id === parseInt(btn.dataset.del, 10)); if (idx > -1) { TRANSACTIONS.splice(idx, 1); buildPeriodTabs(); render(); } }));
+  body.querySelectorAll('button[data-recur]').forEach(btn => btn.addEventListener('click', openRecurringModal));
+}
+
+/* =========================================================================
+   12) MODAL — create / edit category
+   ========================================================================= */
+function openCategoryModal(presetKind, presetGroup, onDone) {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let selectedColor = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+  let kind = presetKind || 'expense';
+  let group = presetGroup || 'variable';
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">Nueva categoría</h3>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Tipo</label>
+      <div class="flex gap-2 mt-1.5 mb-4">
+        <button data-kind="expense" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${kind==='expense'?'active':''}">Gasto</button>
+        <button data-kind="income" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${kind==='income'?'active':''}">Ingreso</button>
+      </div>
+      ${kind === 'expense' ? `
+        <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Grupo</label>
+        <div class="flex gap-2 mt-1.5 mb-4">
+          <button data-group="fijo" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${group==='fijo'?'active':''}">Fijo</button>
+          <button data-group="variable" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${group==='variable'?'active':''}">Variable</button>
+        </div>
+      ` : ''}
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Nombre</label>
+      <input id="mName" type="text" placeholder="ej. Préstamos" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Color</label>
+      <div id="mSwatches" class="flex flex-wrap gap-2 mt-2 mb-5">${PALETTE.map(c => `<span class="swatch ${c===selectedColor?'selected':''}" data-c="${c}" style="background:${c}"></span>`).join('')}</div>
+      <button id="mSave" class="btn-primary w-full rounded-full py-2.5 text-sm font-medium">Crear categoría</button>`;
+    card.querySelectorAll('[data-kind]').forEach(b => b.addEventListener('click', () => { kind = b.dataset.kind; paint(); }));
+    card.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', () => { group = b.dataset.group; paint(); }));
+    card.querySelectorAll('.swatch').forEach(s => s.addEventListener('click', () => { selectedColor = s.dataset.c; paint(); }));
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('mSave').addEventListener('click', () => {
+      const name = document.getElementById('mName').value.trim();
+      if (!name) { document.getElementById('mName').classList.add('ring-2', 'ring-bad'); return; }
+      const key = slugify(name, CATEGORIES);
+      CATEGORIES[key] = { label: name, color: selectedColor, kind, group: kind === 'expense' ? group : null, order: ++ORDER_SEQ, icon: null };
+      closeModal();
+      if (onDone) onDone(key);
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+function openEditCategoryModal(key, onDone) {
+  const cat = CATEGORIES[key];
+  if (!cat) return;
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let selectedColor = cat.color;
+  let group = cat.group || 'variable';
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">Editar categoría</h3>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Nombre</label>
+      <input id="mName" type="text" value="${cat.label}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      ${cat.kind === 'expense' ? `
+        <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Grupo</label>
+        <div class="flex gap-2 mt-1.5 mb-4">
+          <button data-group="fijo" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${group==='fijo'?'active':''}">Fijo</button>
+          <button data-group="variable" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${group==='variable'?'active':''}">Variable</button>
+        </div>
+      ` : ''}
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Color</label>
+      <div id="mSwatches" class="flex flex-wrap gap-2 mt-2 mb-5">${PALETTE.map(c => `<span class="swatch ${c===selectedColor?'selected':''}" data-c="${c}" style="background:${c}"></span>`).join('')}</div>
+      <button id="mSave" class="btn-primary w-full rounded-full py-2.5 text-sm font-medium">Guardar cambios</button>`;
+    card.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', () => { group = b.dataset.group; paint(); }));
+    card.querySelectorAll('.swatch').forEach(s => s.addEventListener('click', () => { selectedColor = s.dataset.c; paint(); }));
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('mSave').addEventListener('click', () => {
+      const name = document.getElementById('mName').value.trim();
+      if (!name) { document.getElementById('mName').classList.add('ring-2', 'ring-bad'); return; }
+      cat.label = name; cat.color = selectedColor;
+      if (cat.kind === 'expense') cat.group = group;
+      closeModal();
+      if (onDone) onDone();
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+function moveCategory(key, dir) {
+  const cat = CATEGORIES[key];
+  if (!cat) return;
+  const siblings = cat.kind === 'expense' ? categoriesInGroup('expense', cat.group) : categoriesInGroup('income', null);
+  const idx = siblings.findIndex(([k]) => k === key);
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return;
+  const otherKey = siblings[swapIdx][0];
+  const tmp = CATEGORIES[key].order; CATEGORIES[key].order = CATEGORIES[otherKey].order; CATEGORIES[otherKey].order = tmp;
+}
+function deleteCategory(key) {
+  const cat = CATEGORIES[key];
+  if (!cat || cat.deleted) return;
+  const sameKind = Object.keys(CATEGORIES).filter(k => CATEGORIES[k].kind === cat.kind && !CATEGORIES[k].deleted);
+  if (sameKind.length <= 1) { showToast(`No puedes eliminar "${cat.label}": es la única categoría de ${cat.kind === 'income' ? 'ingresos' : 'gastos'} que queda.`); return false; }
+  const affected = TRANSACTIONS.filter(t => t.cat === key).length + RECURRING.filter(s => s.cat === key).length;
+  const warn = affected > 0 ? ` Hay ${affected} movimiento${affected===1?'':'s'} en esta categoría — se pasarán a otra categoría del mismo tipo.` : '';
+  if (!confirm(`¿Eliminar la categoría "${cat.label}"?${warn} (Podrás restaurarla luego.)`)) return false;
+  const fallback = sameKind.find(k => k !== key && CATEGORIES[k].group === cat.group) || sameKind.find(k => k !== key);
+  TRANSACTIONS.forEach(t => { if (t.cat === key) t.cat = fallback; });
+  RECURRING.forEach(s => { if (s.cat === key) s.cat = fallback; });
+  cat.deleted = true;
+  if (state.filter.type === 'category' && state.filter.value === key) setFilter('all', null);
+  regenerateAllRecurring();
+  showToast(`Categoría "${cat.label}" eliminada.`);
+  return true;
+}
+function refreshAfterCategoryChange() { buildFilterBar(); buildPeriodTabs(); render(); }
+
+/* =========================================================================
+   12b) MODAL — panel de gestión de categorías (reordenar / editar / eliminar)
+   ========================================================================= */
+function openManageCategoriesModal() {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  function paint() {
+    const section = (title, kind, group) => {
+      const list = kind === 'expense' ? categoriesInGroup('expense', group) : categoriesInGroup('income', null);
+      const rows = list.map(([key, c], idx) => `
+        <div class="flex items-center justify-between py-2 border-b border-border last:border-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${c.color}"></span>
+            <span class="text-sm text-ink truncate">${c.label}</span>
+          </div>
+          <div class="flex items-center gap-0.5 shrink-0">
+            <button data-up="${key}" ${idx===0?'disabled':''} class="icon-btn text-inkmuted" title="Subir">▲</button>
+            <button data-down="${key}" ${idx===list.length-1?'disabled':''} class="icon-btn text-inkmuted" title="Bajar">▼</button>
+            <button data-editcat="${key}" class="icon-btn text-inkmuted" title="Editar">✎</button>
+            <button data-delcat="${key}" class="icon-btn text-inkmuted hover:text-bad" title="Eliminar">✕</button>
+          </div>
+        </div>`).join('') || `<p class="text-xs text-inkmuted italic py-2">Ninguna todavía.</p>`;
+      return `<div class="mb-5">
+        <div class="flex items-center justify-between mb-1">
+          <p class="text-xs uppercase tracking-wide text-inkmuted font-medium">${title}</p>
+          <button data-addcat="${kind}|${group||''}" class="text-xs text-ink underline decoration-dotted">+ Añadir</button>
+        </div>
+        ${rows}
+      </div>`;
+    };
+    const deletedList = Object.entries(CATEGORIES).filter(([, c]) => c.deleted);
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">Categorías</h3>
+      <div class="max-h-[30rem] overflow-y-auto -mr-2 pr-2">
+        ${section('Gastos Fijos', 'expense', 'fijo')}
+        ${section('Gastos Variables', 'expense', 'variable')}
+        ${section('Ingresos', 'income', null)}
+        ${deletedList.length ? `
+          <div class="mt-1 pt-4 border-t border-border">
+            <p class="text-xs uppercase tracking-wide text-inkmuted font-medium mb-2">Eliminadas</p>
+            <div class="flex flex-wrap gap-2">
+              ${deletedList.map(([k, c]) => `<button data-restore="${k}" class="chip flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-ink bg-white"><span class="w-2 h-2 rounded-full" style="background:${c.color}"></span>${c.label}<span class="text-inkmuted">↺</span></button>`).join('')}
+            </div>
+          </div>` : ''}
+      </div>`;
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    card.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { moveCategory(b.dataset.up, -1); refreshAfterCategoryChange(); paint(); }));
+    card.querySelectorAll('[data-down]').forEach(b => b.addEventListener('click', () => { moveCategory(b.dataset.down, 1); refreshAfterCategoryChange(); paint(); }));
+    card.querySelectorAll('[data-editcat]').forEach(b => b.addEventListener('click', () => openEditCategoryModal(b.dataset.editcat, () => { refreshAfterCategoryChange(); paint(); backdrop.classList.remove('hidden'); })));
+    card.querySelectorAll('[data-delcat]').forEach(b => b.addEventListener('click', () => { if (deleteCategory(b.dataset.delcat)) { refreshAfterCategoryChange(); paint(); } }));
+    card.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () => { CATEGORIES[b.dataset.restore].deleted = false; refreshAfterCategoryChange(); paint(); showToast('Categoría restaurada.'); }));
+    card.querySelectorAll('[data-addcat]').forEach(b => b.addEventListener('click', () => {
+      const [kind, group] = b.dataset.addcat.split('|');
+      openCategoryModal(kind, group || 'variable', () => { refreshAfterCategoryChange(); paint(); backdrop.classList.remove('hidden'); });
+    }));
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+function closeModal() { document.getElementById('modalBackdrop').classList.add('hidden'); document.getElementById('modalCard').innerHTML = ''; }
+document.getElementById('modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
+document.getElementById('btnManageCats').addEventListener('click', openManageCategoriesModal);
+
+/* =========================================================================
+   13) MODAL — add transaction (recurrencia opcional)
+   ========================================================================= */
+function openTransactionModal() {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let tipo = 'gasto', freq = 'Variable', selectedCat = null;
+  let repeat = 'si', endMode = 'indefinido', endDateVal = '', reminderDaysVal = '7';
+  let dateVal = TODAY, conceptVal = '', amountVal = '';
+
+  function firstCatForKind(kind) { const found = Object.entries(CATEGORIES).find(([, c]) => c.kind === kind && !c.deleted); return found ? found[0] : null; }
+  function catOptions() {
+    const kindWanted = tipo === 'gasto' ? 'expense' : 'income';
+    if (!selectedCat || !CATEGORIES[selectedCat] || CATEGORIES[selectedCat].kind !== kindWanted || CATEGORIES[selectedCat].deleted) selectedCat = firstCatForKind(kindWanted);
+    return categoryOptionsForKind(kindWanted, selectedCat) + `<option value="__new__">+ Crear categoría nueva…</option>`;
+  }
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">Añadir movimiento</h3>
+      <div class="flex gap-2 mb-4">
+        <button data-tipo="gasto" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${tipo==='gasto'?'active':''}">Gasto</button>
+        <button data-tipo="ingreso" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${tipo==='ingreso'?'active':''}">Ingreso</button>
+      </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Fecha</label>
+      <input id="fDate" type="date" value="${dateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
+      <input id="fConcept" type="text" value="${conceptVal}" placeholder="ej. Mercadona" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Categoría</label>
+      <select id="fCat" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-white">${catOptions()}</select>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Frecuencia</label>
+      <div class="flex gap-2 mt-1.5 mb-4">
+        <button data-freq="Fijo" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${freq==='Fijo'?'active':''}">Fijo</button>
+        <button data-freq="Variable" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${freq==='Variable'?'active':''}">Variable</button>
+      </div>
+      ${freq === 'Fijo' ? `
+        <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">¿Se repite cada mes?</label>
+        <div class="flex gap-2 mt-1.5 mb-4">
+          <button data-repeat="si" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${repeat==='si'?'active':''}">Sí</button>
+          <button data-repeat="no" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${repeat==='no'?'active':''}">No, solo esta vez</button>
+        </div>
+        ${repeat === 'si' ? `
+          <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">¿Hasta cuándo?</label>
+          <div class="flex gap-2 mt-1.5 mb-4">
+            <button data-endmode="indefinido" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${endMode==='indefinido'?'active':''}">Indefinido</button>
+            <button data-endmode="fecha" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${endMode==='fecha'?'active':''}">Fecha concreta</button>
+          </div>
+          ${endMode === 'fecha' ? `
+            <input id="fEndDate" type="date" value="${endDateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mb-3 text-sm" />
+            <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Avisarme (días antes de que finalice)</label>
+            <input id="fReminderDays" type="number" min="1" value="${reminderDaysVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+          ` : ''}
+        ` : ''}
+      ` : ''}
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Importe (€)</label>
+      <input id="fAmount" type="number" min="0.01" step="0.01" value="${amountVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+      <button id="mSave" class="btn-primary w-full rounded-full py-2.5 text-sm font-medium">Guardar movimiento</button>`;
+
+    card.querySelectorAll('[data-tipo]').forEach(b => b.addEventListener('click', () => { tipo = b.dataset.tipo; freq = tipo === 'ingreso' ? 'Fijo' : 'Variable'; paint(); }));
+    card.querySelectorAll('[data-freq]').forEach(b => b.addEventListener('click', () => { freq = b.dataset.freq; paint(); }));
+    card.querySelectorAll('[data-repeat]').forEach(b => b.addEventListener('click', () => { repeat = b.dataset.repeat; paint(); }));
+    card.querySelectorAll('[data-endmode]').forEach(b => b.addEventListener('click', () => { endMode = b.dataset.endmode; paint(); }));
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('fDate').addEventListener('input', e => dateVal = e.target.value);
+    document.getElementById('fConcept').addEventListener('input', e => conceptVal = e.target.value);
+    document.getElementById('fAmount').addEventListener('input', e => amountVal = e.target.value);
+    const eEndInput = document.getElementById('fEndDate'); if (eEndInput) eEndInput.addEventListener('input', e => endDateVal = e.target.value);
+    const eRemInput = document.getElementById('fReminderDays'); if (eRemInput) eRemInput.addEventListener('input', e => reminderDaysVal = e.target.value);
+    document.getElementById('fCat').addEventListener('change', (e) => {
+      if (e.target.value === '__new__') openCategoryModal(tipo === 'gasto' ? 'expense' : 'income', null, (newKey) => { selectedCat = newKey; paint(); refreshAfterCategoryChange(); });
+      else selectedCat = e.target.value;
+    });
+
+    document.getElementById('mSave').addEventListener('click', () => {
+      const date = document.getElementById('fDate').value;
+      const concept = document.getElementById('fConcept').value.trim();
+      const catSel = document.getElementById('fCat').value;
+      const amountRaw = parseFloat(document.getElementById('fAmount').value);
+      if (!date || !concept || catSel === '__new__' || isNaN(amountRaw) || amountRaw <= 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      if (freq === 'Fijo' && repeat === 'si' && endMode === 'fecha' && !endDateVal) { document.getElementById('fEndDate').classList.add('ring-2', 'ring-bad'); return; }
+      const amount = tipo === 'ingreso' ? amountRaw : -amountRaw;
+
+      if (freq === 'Fijo' && repeat === 'si') {
+        RECURRING.push(mkSeries(concept, catSel, amount, date, endMode === 'fecha' ? endDateVal : null, endMode === 'fecha' ? (parseInt(reminderDaysVal, 10) || 7) : null));
+        regenerateAllRecurring();
+      } else {
+        TRANSACTIONS.push(mkTx(date, concept, catSel, freq, amount));
+      }
+      state.viewMode = 'month'; state.month = monthKey(date); state.year = yearKey(date);
+      setFilter('all', null);
+      closeModal(); buildPeriodTabs(); syncControls(); render();
+      showToast('Movimiento añadido correctamente.');
+      maybeShowReminderPopup();
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+
+/* =========================================================================
+   13b) MODAL — edit an existing (non-recurring) transaction
+   ========================================================================= */
+function openEditTransactionModal(id) {
+  const tx = TRANSACTIONS.find(t => t.id === id);
+  if (!tx) return;
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let tipo = tx.amount >= 0 ? 'ingreso' : 'gasto';
+  let freq = tx.freq;
+  let selectedCat = tx.cat;
+  let dateVal = tx.date, conceptVal = tx.concept, amountVal = String(Math.abs(tx.amount));
+
+  function catOptions() {
+    const kindWanted = tipo === 'gasto' ? 'expense' : 'income';
+    if (!selectedCat || !CATEGORIES[selectedCat] || CATEGORIES[selectedCat].kind !== kindWanted || CATEGORIES[selectedCat].deleted) {
+      const found = Object.entries(CATEGORIES).find(([, c]) => c.kind === kindWanted && !c.deleted);
+      selectedCat = found ? found[0] : null;
+    }
+    return categoryOptionsForKind(kindWanted, selectedCat) + `<option value="__new__">+ Crear categoría nueva…</option>`;
+  }
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">Editar movimiento</h3>
+      <div class="flex gap-2 mb-4">
+        <button data-tipo="gasto" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${tipo==='gasto'?'active':''}">Gasto</button>
+        <button data-tipo="ingreso" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${tipo==='ingreso'?'active':''}">Ingreso</button>
+      </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Fecha</label>
+      <input id="fDate" type="date" value="${dateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
+      <input id="fConcept" type="text" value="${conceptVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Categoría</label>
+      <select id="fCat" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-white">${catOptions()}</select>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Frecuencia</label>
+      <div class="flex gap-2 mt-1.5 mb-4">
+        <button data-freq="Fijo" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${freq==='Fijo'?'active':''}">Fijo</button>
+        <button data-freq="Variable" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${freq==='Variable'?'active':''}">Variable</button>
+      </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Importe (€)</label>
+      <input id="fAmount" type="number" min="0.01" step="0.01" value="${amountVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+      <div class="flex gap-2">
+        <button id="mDelete" class="btn-outline flex-1 rounded-full py-2.5 text-sm font-medium" style="color:#B15D4A; border-color:#B15D4A;">Eliminar</button>
+        <button id="mSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium">Guardar cambios</button>
+      </div>`;
+    card.querySelectorAll('[data-tipo]').forEach(b => b.addEventListener('click', () => { tipo = b.dataset.tipo; paint(); }));
+    card.querySelectorAll('[data-freq]').forEach(b => b.addEventListener('click', () => { freq = b.dataset.freq; paint(); }));
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('fDate').addEventListener('input', e => dateVal = e.target.value);
+    document.getElementById('fConcept').addEventListener('input', e => conceptVal = e.target.value);
+    document.getElementById('fAmount').addEventListener('input', e => amountVal = e.target.value);
+    document.getElementById('fCat').addEventListener('change', (e) => {
+      if (e.target.value === '__new__') openCategoryModal(tipo === 'gasto' ? 'expense' : 'income', null, (newKey) => { selectedCat = newKey; paint(); refreshAfterCategoryChange(); });
+      else selectedCat = e.target.value;
+    });
+    document.getElementById('mDelete').addEventListener('click', () => {
+      if (!confirm('¿Eliminar este movimiento?')) return;
+      const idx = TRANSACTIONS.findIndex(t => t.id === id);
+      if (idx > -1) TRANSACTIONS.splice(idx, 1);
+      closeModal(); buildPeriodTabs(); render();
+      showToast('Movimiento eliminado.');
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const date = document.getElementById('fDate').value;
+      const concept = document.getElementById('fConcept').value.trim();
+      const catSel = document.getElementById('fCat').value;
+      const amountRaw = parseFloat(document.getElementById('fAmount').value);
+      if (!date || !concept || catSel === '__new__' || isNaN(amountRaw) || amountRaw <= 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      tx.date = date; tx.concept = concept; tx.cat = catSel; tx.freq = freq;
+      tx.amount = tipo === 'ingreso' ? amountRaw : -amountRaw;
+      closeModal(); buildPeriodTabs(); syncControls(); render();
+      showToast('Movimiento actualizado.');
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+
+/* =========================================================================
+   14) MODAL — manage recurring series (edit / cancel)
+   ========================================================================= */
+function openRecurringModal() {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  function paintList() {
+    const rows = RECURRING.map(s => {
+      const cat = CATEGORIES[s.cat] || { color: '#8A8477', label: s.cat };
+      const status = s.endDate ? `Hasta ${new Date(s.endDate).toLocaleDateString('es-ES')}` : 'Indefinido';
+      return `<div class="flex items-center justify-between py-3 border-b border-border last:border-0">
+        <div class="flex items-center gap-3">
+          <span class="w-2.5 h-2.5 rounded-full" style="background:${cat.color}"></span>
+          <div><p class="text-sm text-ink">${s.concept}</p><p class="text-xs text-inkmuted font-mono">${fmtEUR(s.amount)} / mes · ${status}</p></div>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button data-edit="${s.id}" class="text-xs text-inkmuted hover:text-ink underline">Editar</button>
+          <button data-cancel="${s.id}" class="text-xs text-bad hover:opacity-70 underline">Cancelar</button>
+        </div>
+      </div>`;
+    }).join('') || `<p class="text-sm text-inkmuted py-6 text-center">Todavía no tienes movimientos recurrentes.</p>`;
+    card.innerHTML = `<button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">Movimientos recurrentes</h3>
+      <div class="max-h-96 overflow-y-auto -mr-2 pr-2">${rows}</div>`;
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    card.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEditSeries(parseInt(b.dataset.edit, 10))));
+    card.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => {
+      const s = RECURRING.find(r => r.id === parseInt(b.dataset.cancel, 10));
+      if (!s) return;
+      if (!confirm(`¿Cancelar "${s.concept}"? No se generará a partir de ahora (se conserva el historial).`)) return;
+      const cutoffMonth = addMonths(monthKey(TODAY), -1);
+      s.endDate = `${cutoffMonth}-${pad2(daysInMonth(cutoffMonth))}`;
+      s.reminderDays = null;
+      regenerateAllRecurring(); buildPeriodTabs(); render(); paintList();
+      showToast(`"${s.concept}" se ha cancelado.`);
+    }));
+  }
+  function openEditSeries(id) {
+    const s = RECURRING.find(r => r.id === id);
+    if (!s) return;
+    let endMode = s.endDate ? 'fecha' : 'indefinido';
+    let endDateVal = s.endDate || '';
+    let reminderDaysVal = s.reminderDays || 7;
+    function paintEdit() {
+      card.innerHTML = `<button id="mBack" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+        <h3 class="font-display text-xl mb-4" style="font-weight:560;">Editar recurrente</h3>
+        <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
+        <input id="eConcept" type="text" value="${s.concept}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+        <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Importe (€, sin signo)</label>
+        <input id="eAmount" type="number" step="0.01" min="0.01" value="${Math.abs(s.amount)}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+        <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">¿Hasta cuándo?</label>
+        <div class="flex gap-2 mt-1.5 mb-4">
+          <button data-endmode="indefinido" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${endMode==='indefinido'?'active':''}">Indefinido</button>
+          <button data-endmode="fecha" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${endMode==='fecha'?'active':''}">Fecha concreta</button>
+        </div>
+        ${endMode === 'fecha' ? `
+          <input id="eEndDate" type="date" value="${endDateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mb-3 text-sm" />
+          <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Avisarme (días antes)</label>
+          <input id="eReminderDays" type="number" min="1" value="${reminderDaysVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+        ` : ''}
+        <button id="eSave" class="btn-primary w-full rounded-full py-2.5 text-sm font-medium">Guardar cambios</button>`;
+      document.getElementById('mBack').addEventListener('click', paintList);
+      card.querySelectorAll('[data-endmode]').forEach(b => b.addEventListener('click', () => { endMode = b.dataset.endmode; paintEdit(); }));
+      const eEnd = document.getElementById('eEndDate'); if (eEnd) eEnd.addEventListener('input', e => endDateVal = e.target.value);
+      const eRem = document.getElementById('eReminderDays'); if (eRem) eRem.addEventListener('input', e => reminderDaysVal = e.target.value);
+      document.getElementById('eSave').addEventListener('click', () => {
+        s.concept = document.getElementById('eConcept').value.trim() || s.concept;
+        const amt = parseFloat(document.getElementById('eAmount').value);
+        if (!isNaN(amt) && amt > 0) s.amount = s.amount < 0 ? -amt : amt;
+        s.endDate = endMode === 'fecha' ? endDateVal : null;
+        s.reminderDays = endMode === 'fecha' ? (parseInt(reminderDaysVal, 10) || 7) : null;
+        regenerateAllRecurring(); buildPeriodTabs(); render();
+        showToast('Movimiento recurrente actualizado.');
+        maybeShowReminderPopup();
+        paintList();
+      });
+    }
+    paintEdit();
+  }
+  paintList(); backdrop.classList.remove('hidden');
+}
+
+/* =========================================================================
+   15) CSV IMPORT (extracto bancario) + AUTO-CATEGORIZACIÓN
+   ========================================================================= */
+const KEYWORD_MAP = [
+  [['mercadona','carrefour','lidl','alcampo','dia','fruteria','supermercado'], 'alimentacion'],
+  [['iberdrola','endesa','movistar','vodafone','orange','alquiler','hipoteca','seguro','comunidad'], 'fijos'],
+  [['netflix','spotify','hbo','disney','cine','restaurante','concierto'], 'ocio'],
+  [['repsol','cepsa','gasolina','renfe','uber','cabify','parking','peaje'], 'transporte'],
+  [['nomina','salario','payroll'], 'nomina'],
+];
+function autoCategorize(concept, amount) {
+  const n = normalize(concept);
+  for (const [words, cat] of KEYWORD_MAP) if (CATEGORIES[cat] && !CATEGORIES[cat].deleted && words.some(w => n.includes(normalize(w)))) return cat;
+  const fallbackIncome = Object.entries(CATEGORIES).find(([k, c]) => c.kind === 'income' && !c.deleted);
+  const fallbackExpense = Object.entries(CATEGORIES).find(([k, c]) => c.kind === 'expense' && c.group === 'variable' && !c.deleted);
+  return amount >= 0 ? (fallbackIncome ? fallbackIncome[0] : 'otros_ingresos') : (fallbackExpense ? fallbackExpense[0] : 'variables');
+}
+function parseFlexibleDate(s) { s = (s || '').trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : null; }
+function parseFlexibleAmount(raw) { let s = (raw || '').replace(/[€$\s]/g, ''); if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.'); else if (s.includes(',')) s = s.replace(',', '.'); return parseFloat(s); }
+function parseCSVText(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  if (lines.length === 0) return [];
+  const delim = lines[0].includes(';') ? ';' : ',';
+  const headerCols = lines[0].split(delim).map(c => normalize(c.trim()));
+  const headerLikely = headerCols.some(c => ['fecha','date','concepto','descripcion','importe','amount','cantidad'].includes(c));
+  let idxDate = 0, idxConcept = 1, idxAmount = 2, start = 0;
+  if (headerLikely) { idxDate = headerCols.findIndex(c => ['fecha','date'].includes(c)); idxConcept = headerCols.findIndex(c => ['concepto','descripcion','concept','detalle'].includes(c)); idxAmount = headerCols.findIndex(c => ['importe','amount','cantidad','valor'].includes(c)); start = 1; }
+  const rows = [];
+  for (let i = start; i < lines.length; i++) {
+    const parts = lines[i].split(delim);
+    if (parts.length < 3) continue;
+    const date = parseFlexibleDate(parts[idxDate]);
+    const concept = (parts[idxConcept] || '').trim();
+    const amount = parseFlexibleAmount(parts[idxAmount]);
+    if (!date || !concept || isNaN(amount)) continue;
+    rows.push({ date, concept, amount });
+  }
+  return rows;
+}
+document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileInput').click());
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const text = ev.target.result;
+    const trimmed = text.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      const result = tryRestoreFromJSON(text);
+      showToast(result.ok ? 'Ese archivo era una copia de seguridad (JSON) — datos restaurados correctamente.' : result.error);
+      return;
+    }
+    const rows = parseCSVText(text);
+    if (rows.length === 0) { showToast('No se pudo leer ningún movimiento válido de ese archivo.'); return; }
+    rows.forEach(r => { const cat = autoCategorize(r.concept, r.amount); const freq = (CATEGORIES[cat] && (CATEGORIES[cat].group === 'fijo' || cat === 'nomina')) ? 'Fijo' : 'Variable'; TRANSACTIONS.push(mkTx(r.date, r.concept, cat, freq, r.amount)); });
+    state.viewMode = 'year'; state.year = yearKey(rows[rows.length - 1].date); setFilter('all', null);
+    buildPeriodTabs(); syncControls(); render();
+    showToast(`Se importaron ${rows.length} movimientos y se categorizaron automáticamente. Revisa la columna «Categoría» si algo no coincide.`);
+  };
+  reader.readAsText(file); e.target.value = '';
+});
+
+/* =========================================================================
+   16) EXPORTAR / RESTAURAR DATOS (copia de seguridad completa en JSON)
+   ========================================================================= */
+function exportData() {
+  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `panorama-datos-${TODAY}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Datos exportados. Guarda el archivo en un sitio seguro.');
+}
+function tryRestoreFromJSON(rawText) {
+  try {
+    const cleaned = String(rawText).replace(/^\uFEFF/, '').trim();
+    const data = JSON.parse(cleaned);
+    if (!data || !Array.isArray(data.transactions) || !Array.isArray(data.recurring)) {
+      return { ok: false, error: 'El archivo no tiene el formato esperado (faltan "transactions" o "recurring"). ¿Seguro que es un JSON exportado desde Panorama?' };
+    }
+    Object.assign(CATEGORIES, data.categories || {});
+    TRANSACTIONS = data.transactions.map(t => ({ ...t }));
+    RECURRING = data.recurring.map(s => ({ ...s }));
+    TX_SEQ = data.txSeq || Math.max(0, ...TRANSACTIONS.map(t => t.id || 0), 0);
+    REC_SEQ = data.recSeq || Math.max(0, ...RECURRING.map(s => s.id || 0), 0);
+    ORDER_SEQ = data.orderSeq || Math.max(100, ...Object.values(CATEGORIES).map(c => c.order || 0));
+    regenerateAllRecurring();
+    setFilter('all', null);
+    buildFilterBar(); buildPeriodTabs(); syncControls(); render();
+    ghSave();
+    showToast('Datos restaurados correctamente.');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: 'No es un JSON válido: ' + err.message };
+  }
+}
+function importDataFile(file) {
+  const reader = new FileReader();
+  reader.onload = (ev) => { const result = tryRestoreFromJSON(ev.target.result); if (!result.ok) showToast(result.error); };
+  reader.onerror = () => showToast('No se pudo leer el archivo.');
+  reader.readAsText(file);
+}
+function openRestoreModal() {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  card.innerHTML = `
+    <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+    <h3 class="font-display text-xl mb-4" style="font-weight:560;">Restaurar datos</h3>
+    <button id="rChooseFile" class="btn-primary w-full rounded-full py-2.5 text-sm font-medium mb-4">Subir archivo .json</button>
+    <p class="text-xs text-inkmuted text-center mb-4">— o, si la subida de archivo no funciona —</p>
+    <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Pega aquí el contenido del .json exportado</label>
+    <textarea id="rPasteArea" rows="6" placeholder="Abre el .json con un editor de texto, copia todo su contenido y pégalo aquí…" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-xs font-mono"></textarea>
+    <button id="rFromText" class="btn-outline w-full rounded-full py-2.5 text-sm font-medium">Restaurar desde texto</button>
+    <p id="rError" class="hidden text-xs text-bad mt-3"></p>`;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  document.getElementById('rChooseFile').addEventListener('click', () => { closeModal(); document.getElementById('jsonFileInput').click(); });
+  document.getElementById('rFromText').addEventListener('click', () => {
+    const text = document.getElementById('rPasteArea').value;
+    if (!text.trim()) { const el = document.getElementById('rError'); el.textContent = 'Pega primero el contenido del archivo.'; el.classList.remove('hidden'); return; }
+    const result = tryRestoreFromJSON(text);
+    if (!result.ok) { const el = document.getElementById('rError'); el.textContent = result.error; el.classList.remove('hidden'); return; }
+    closeModal();
+  });
+  backdrop.classList.remove('hidden');
+}
+document.getElementById('btnExport').addEventListener('click', exportData);
+document.getElementById('btnImportData').addEventListener('click', () => openRestoreModal());
+document.getElementById('jsonFileInput').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) importDataFile(f); e.target.value = ''; });
+
+function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.add('hidden'), 4500); }
+
+/* =========================================================================
+   17) MASTER RENDER + INIT
+   ========================================================================= */
+function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); scheduleGhSave(); }
+
+document.getElementById('searchInput').addEventListener('input', (e) => handleSearchInput(e.target.value));
+document.getElementById('btnAddTx').addEventListener('click', () => openTransactionModal());
+document.getElementById('btnRecurring').addEventListener('click', () => openRecurringModal());
+
+/* =========================================================================
+   18) SINCRONIZACIÓN CON GITHUB (repo privado como "base de datos")
+   ========================================================================= */
+const GH_CFG_KEY = 'panorama_gh_config';
+function getGhConfig() { try { return JSON.parse(localStorage.getItem(GH_CFG_KEY) || 'null'); } catch (e) { return null; } }
+function setGhConfig(cfg) { localStorage.setItem(GH_CFG_KEY, JSON.stringify(cfg)); }
+function clearGhConfig() { localStorage.removeItem(GH_CFG_KEY); }
+function utf8ToB64(str) { return btoa(unescape(encodeURIComponent(str))); }
+function b64ToUtf8(str) { return decodeURIComponent(escape(atob(str.replace(/\n/g, '')))); }
+function ghHeaders(cfg) { return { 'Authorization': 'Bearer ' + cfg.token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' }; }
+function ghUrl(cfg) { return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path || 'data.json'}`; }
+
+let ghFileSha = null, ghSyncTimer = null, ghDataLoaded = false;
+
+function setSyncStatus(status) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  const map = {
+    'sin-config': ['⚙ Sin configurar', '#8A8477'],
+    'cargando': ['🔄 Cargando…', '#8A8477'],
+    'ok': ['☁ Sincronizado', '#6B8F71'],
+    'pendiente': ['● Cambios sin guardar…', '#C7A15A'],
+    'guardando': ['🔄 Guardando…', '#8A8477'],
+    'error': ['⚠ Error de sincronización', '#B15D4A'],
+  };
+  const [text, color] = map[status] || map['sin-config'];
+  el.textContent = text; el.style.color = color;
+}
+
+async function ghLoad() {
+  const cfg = getGhConfig();
+  if (!cfg || !cfg.token || !cfg.owner || !cfg.repo) { setSyncStatus('sin-config'); ghDataLoaded = true; return; }
+  setSyncStatus('cargando');
+  try {
+    const res = await fetch(ghUrl(cfg) + `?ref=${cfg.branch || 'main'}`, { headers: ghHeaders(cfg) });
+    if (res.status === 404) { ghFileSha = null; setSyncStatus('ok'); ghDataLoaded = true; return; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    ghFileSha = json.sha;
+    const data = JSON.parse(b64ToUtf8(json.content));
+    if (data && data.categories && Object.keys(data.categories).length) {
+      Object.keys(CATEGORIES).forEach(k => delete CATEGORIES[k]);
+      Object.assign(CATEGORIES, data.categories);
+    }
+    if (data && Array.isArray(data.transactions)) TRANSACTIONS = data.transactions.map(t => ({ ...t }));
+    if (data && Array.isArray(data.recurring)) RECURRING = data.recurring.map(s => ({ ...s }));
+    TX_SEQ = data.txSeq || TX_SEQ;
+    REC_SEQ = data.recSeq || REC_SEQ;
+    ORDER_SEQ = data.orderSeq || ORDER_SEQ;
+    setSyncStatus('ok');
+  } catch (e) {
+    setSyncStatus('error');
+    showToast('No se pudo cargar desde GitHub: ' + e.message);
+  }
+  ghDataLoaded = true;
+}
+async function ghSave() {
+  const cfg = getGhConfig();
+  if (!cfg || !cfg.token || !cfg.owner || !cfg.repo) return;
+  setSyncStatus('guardando');
+  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ };
+  const body = { message: 'Actualización automática · ' + new Date().toISOString(), content: utf8ToB64(JSON.stringify(payload, null, 2)), branch: cfg.branch || 'main' };
+  if (ghFileSha) body.sha = ghFileSha;
+  try {
+    let res = await fetch(ghUrl(cfg), { method: 'PUT', headers: ghHeaders(cfg), body: JSON.stringify(body) });
+    if (res.status === 409) {
+      const retryGet = await fetch(ghUrl(cfg) + `?ref=${cfg.branch || 'main'}`, { headers: ghHeaders(cfg) });
+      if (retryGet.ok) { const j = await retryGet.json(); ghFileSha = j.sha; body.sha = ghFileSha; }
+      res = await fetch(ghUrl(cfg), { method: 'PUT', headers: ghHeaders(cfg), body: JSON.stringify(body) });
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    ghFileSha = j.content.sha;
+    setSyncStatus('ok');
+  } catch (e) {
+    setSyncStatus('error');
+    showToast('No se pudo guardar en GitHub: ' + e.message);
+  }
+}
+function scheduleGhSave() {
+  if (!ghDataLoaded) return;
+  const cfg = getGhConfig();
+  if (!cfg || !cfg.token) return;
+  clearTimeout(ghSyncTimer);
+  setSyncStatus('pendiente');
+  ghSyncTimer = setTimeout(ghSave, 1500);
+}
+
+function openSyncModal() {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  const cfg = getGhConfig() || { owner: '', repo: '', token: '', branch: 'main', path: 'data.json' };
+  card.innerHTML = `
+    <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+    <h3 class="font-display text-xl mb-2" style="font-weight:560;">Sincronización con GitHub</h3>
+    <p class="text-xs text-inkmuted mb-4">Tus datos se guardan como un archivo en un repo <strong>privado</strong> tuyo, usando un token limitado solo a ese repo. El token se queda únicamente en este navegador (nunca en el código).</p>
+    <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Usuario de GitHub</label>
+    <input id="sOwner" type="text" value="${cfg.owner}" placeholder="ej. primosclub23" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-3 text-sm" />
+    <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Repositorio privado de datos</label>
+    <input id="sRepo" type="text" value="${cfg.repo}" placeholder="ej. gastos-data" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-3 text-sm" />
+    <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Token (fine-grained, con permiso solo sobre ese repo)</label>
+    <input id="sToken" type="password" value="${cfg.token}" placeholder="github_pat_..." class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-3 text-sm" />
+    <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Rama</label>
+    <input id="sBranch" type="text" value="${cfg.branch || 'main'}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+    <div class="flex gap-2 mb-3">
+      <button id="sTest" class="btn-outline flex-1 rounded-full py-2.5 text-sm font-medium">Probar conexión</button>
+      <button id="sSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium">Guardar</button>
+    </div>
+    <button id="sClear" class="w-full text-center text-xs text-bad underline">Quitar configuración de este navegador</button>
+    <p id="sMsg" class="text-xs mt-3"></p>`;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  document.getElementById('sClear').addEventListener('click', () => { clearGhConfig(); ghFileSha = null; closeModal(); setSyncStatus('sin-config'); showToast('Configuración de sincronización eliminada.'); });
+  function readForm() { return { owner: document.getElementById('sOwner').value.trim(), repo: document.getElementById('sRepo').value.trim(), token: document.getElementById('sToken').value.trim(), branch: document.getElementById('sBranch').value.trim() || 'main', path: 'data.json' }; }
+  document.getElementById('sTest').addEventListener('click', async () => {
+    const c = readForm();
+    const msg = document.getElementById('sMsg');
+    msg.textContent = 'Probando…'; msg.style.color = '#8A8477';
+    try {
+      const res = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}`, { headers: ghHeaders(c) });
+      if (res.ok) { msg.textContent = '✓ Conexión correcta, repo encontrado.'; msg.style.color = '#6B8F71'; }
+      else { msg.textContent = `✕ Error ${res.status}: revisa usuario, repo y token.`; msg.style.color = '#B15D4A'; }
+    } catch (e) { msg.textContent = '✕ No se pudo conectar.'; msg.style.color = '#B15D4A'; }
+  });
+  document.getElementById('sSave').addEventListener('click', async () => {
+    const c = readForm();
+    if (!c.owner || !c.repo || !c.token) { document.getElementById('sMsg').textContent = 'Rellena usuario, repo y token.'; document.getElementById('sMsg').style.color = '#B15D4A'; return; }
+    setGhConfig(c);
+    closeModal();
+    ghFileSha = null;
+    await ghLoad();
+    buildFilterBar(); buildPeriodTabs(); render();
+    showToast('Configuración guardada. Sincronizando…');
+  });
+  backdrop.classList.remove('hidden');
+}
+document.getElementById('btnSync').addEventListener('click', openSyncModal);
+
+async function initApp() {
+  buildViewToggle();
+  await ghLoad();
+  regenerateAllRecurring();
+  buildPeriodTabs();
+  buildFilterBar();
+  render();
+  maybeShowReminderPopup();
+}
+initApp();
+</script>
+</body>
+</html>
