@@ -245,9 +245,9 @@ function categoryOptionsForKind(kind, selectedKey) {
    3) RECURRING SERIES + ONE-OFF TRANSACTIONS — empezamos limpio en julio 2026
    ========================================================================= */
 let TX_SEQ = 0, REC_SEQ = 0;
-function mkTx(date, concept, cat, freq, amount, seriesId) { return { id: ++TX_SEQ, date, concept, cat, freq, amount, seriesId: seriesId || null }; }
-function mkSeries(concept, cat, amount, startDate, endDate, reminderDays) {
-  return { id: ++REC_SEQ, concept, cat, amount, dayOfMonth: parseInt(startDate.split('-')[2], 10), startDate, endDate: endDate || null, reminderDays: reminderDays != null ? reminderDays : null };
+function mkTx(date, concept, cat, freq, amount, seriesId, logo) { return { id: ++TX_SEQ, date, concept, cat, freq, amount, seriesId: seriesId || null, logo: logo || null }; }
+function mkSeries(concept, cat, amount, startDate, endDate, reminderDays, logo) {
+  return { id: ++REC_SEQ, concept, cat, amount, dayOfMonth: parseInt(startDate.split('-')[2], 10), startDate, endDate: endDate || null, reminderDays: reminderDays != null ? reminderDays : null, logo: logo || null };
 }
 
 let TRANSACTIONS = [];  // sin datos de ejemplo — listo para tus movimientos reales
@@ -261,7 +261,7 @@ function generateSeriesTx(s) {
   while (true) {
     const day = Math.min(s.dayOfMonth, daysInMonth(cursor));
     const dateStr = `${cursor}-${pad2(day)}`;
-    if (dateStr >= s.startDate && (!s.endDate || dateStr <= s.endDate)) out.push(mkTx(dateStr, s.concept, s.cat, 'Fijo', s.amount, s.id));
+    if (dateStr >= s.startDate && (!s.endDate || dateStr <= s.endDate)) out.push(mkTx(dateStr, s.concept, s.cat, 'Fijo', s.amount, s.id, s.logo));
     if (cursor === endMonth) break;
     cursor = addMonths(cursor, 1);
   }
@@ -558,9 +558,13 @@ function renderTable() {
     const actionCell = isRec
       ? `<button data-recur="${t.id}" title="Movimiento recurrente — gestionar" class="text-inkmuted hover:text-ink text-xs">🔁</button>`
       : `<button data-edit="${t.id}" title="Editar" class="text-inkmuted hover:text-ink text-xs mr-3">✎</button><button data-del="${t.id}" class="text-inkmuted hover:text-bad text-xs">✕</button>`;
+    const logoDomain = t.logo || null;
+    const conceptCell = logoDomain
+      ? `<span class="inline-flex items-center gap-2"><span class="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-surfacealt flex items-center justify-center"><img src="${logoImgURL(logoDomain)}" class="w-full h-full object-cover" onerror="this.parentElement.remove()"></span>${t.concept}</span>`
+      : t.concept;
     return `<tr>
       <td class="py-3 pr-4 font-mono text-xs text-inkmuted whitespace-nowrap">${dateFmt}</td>
-      <td class="py-3 pr-4 text-ink">${t.concept}</td>
+      <td class="py-3 pr-4 text-ink">${conceptCell}</td>
       <td class="py-3 pr-4">${catCell}</td>
       <td class="py-3 pr-4"><span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background:${tagColor}1A; color:${tagColor};">${t.freq}</span></td>
       <td class="py-3 pr-4 text-right font-mono text-sm text-ink whitespace-nowrap">${fmtEUR(t.amount)}</td>
@@ -752,6 +756,7 @@ function openTransactionModal() {
   let tipo = 'gasto', freq = 'Variable', selectedCat = null;
   let repeat = 'si', endMode = 'indefinido', endDateVal = '', reminderDaysVal = '7';
   let dateVal = TODAY, conceptVal = '', amountVal = '';
+  let logoVal = '', logoTouched = false;
 
   function firstCatForKind(kind) { const found = Object.entries(CATEGORIES).find(([, c]) => c.kind === kind && !c.deleted); return found ? found[0] : null; }
   function catOptions() {
@@ -771,6 +776,11 @@ function openTransactionModal() {
       <input id="fDate" type="date" value="${dateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
       <input id="fConcept" type="text" value="${conceptVal}" placeholder="ej. Mercadona" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Logo (opcional)</label>
+      <div class="flex items-center gap-2 mt-1.5 mb-4">
+        <span id="fLogoPreview" class="w-8 h-8 rounded-full bg-surfacealt flex items-center justify-center overflow-hidden shrink-0">${renderLogoPreview(logoVal)}</span>
+        <input id="fLogoDomain" type="text" value="${logoVal}" placeholder="se detecta solo, o escribe un dominio (ej. mercadona.es)" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
+      </div>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Categoría</label>
       <select id="fCat" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-white">${catOptions()}</select>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Frecuencia</label>
@@ -807,7 +817,19 @@ function openTransactionModal() {
     card.querySelectorAll('[data-endmode]').forEach(b => b.addEventListener('click', () => { endMode = b.dataset.endmode; paint(); }));
     document.getElementById('mClose').addEventListener('click', closeModal);
     document.getElementById('fDate').addEventListener('input', e => dateVal = e.target.value);
-    document.getElementById('fConcept').addEventListener('input', e => conceptVal = e.target.value);
+    document.getElementById('fConcept').addEventListener('input', e => {
+      conceptVal = e.target.value;
+      if (!logoTouched) {
+        logoVal = detectLogoDomain(conceptVal) || '';
+        document.getElementById('fLogoDomain').value = logoVal;
+        document.getElementById('fLogoPreview').innerHTML = renderLogoPreview(logoVal);
+      }
+    });
+    document.getElementById('fLogoDomain').addEventListener('input', e => {
+      logoTouched = true;
+      logoVal = e.target.value.trim();
+      document.getElementById('fLogoPreview').innerHTML = renderLogoPreview(logoVal);
+    });
     document.getElementById('fAmount').addEventListener('input', e => amountVal = e.target.value);
     const eEndInput = document.getElementById('fEndDate'); if (eEndInput) eEndInput.addEventListener('input', e => endDateVal = e.target.value);
     const eRemInput = document.getElementById('fReminderDays'); if (eRemInput) eRemInput.addEventListener('input', e => reminderDaysVal = e.target.value);
@@ -826,10 +848,10 @@ function openTransactionModal() {
       const amount = tipo === 'ingreso' ? amountRaw : -amountRaw;
 
       if (freq === 'Fijo' && repeat === 'si') {
-        RECURRING.push(mkSeries(concept, catSel, amount, date, endMode === 'fecha' ? endDateVal : null, endMode === 'fecha' ? (parseInt(reminderDaysVal, 10) || 7) : null));
+        RECURRING.push(mkSeries(concept, catSel, amount, date, endMode === 'fecha' ? endDateVal : null, endMode === 'fecha' ? (parseInt(reminderDaysVal, 10) || 7) : null, logoVal || null));
         regenerateAllRecurring();
       } else {
-        TRANSACTIONS.push(mkTx(date, concept, catSel, freq, amount));
+        TRANSACTIONS.push(mkTx(date, concept, catSel, freq, amount, null, logoVal || null));
       }
       state.viewMode = 'month'; state.month = monthKey(date); state.year = yearKey(date);
       setFilter('all', null);
@@ -852,6 +874,7 @@ function openEditTransactionModal(id) {
   let freq = tx.freq;
   let selectedCat = tx.cat;
   let dateVal = tx.date, conceptVal = tx.concept, amountVal = String(Math.abs(tx.amount));
+  let logoVal = tx.logo || detectLogoDomain(tx.concept) || '';
 
   function catOptions() {
     const kindWanted = tipo === 'gasto' ? 'expense' : 'income';
@@ -873,6 +896,11 @@ function openEditTransactionModal(id) {
       <input id="fDate" type="date" value="${dateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
       <input id="fConcept" type="text" value="${conceptVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Logo (opcional)</label>
+      <div class="flex items-center gap-2 mt-1.5 mb-4">
+        <span id="fLogoPreview" class="w-8 h-8 rounded-full bg-surfacealt flex items-center justify-center overflow-hidden shrink-0">${renderLogoPreview(logoVal)}</span>
+        <input id="fLogoDomain" type="text" value="${logoVal}" placeholder="ej. mercadona.es — vacío = sin logo" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
+      </div>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Categoría</label>
       <select id="fCat" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-white">${catOptions()}</select>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Frecuencia</label>
@@ -891,6 +919,10 @@ function openEditTransactionModal(id) {
     document.getElementById('mClose').addEventListener('click', closeModal);
     document.getElementById('fDate').addEventListener('input', e => dateVal = e.target.value);
     document.getElementById('fConcept').addEventListener('input', e => conceptVal = e.target.value);
+    document.getElementById('fLogoDomain').addEventListener('input', e => {
+      logoVal = e.target.value.trim();
+      document.getElementById('fLogoPreview').innerHTML = renderLogoPreview(logoVal);
+    });
     document.getElementById('fAmount').addEventListener('input', e => amountVal = e.target.value);
     document.getElementById('fCat').addEventListener('change', (e) => {
       if (e.target.value === '__new__') openCategoryModal(tipo === 'gasto' ? 'expense' : 'income', null, (newKey) => { selectedCat = newKey; paint(); refreshAfterCategoryChange(); });
@@ -911,6 +943,7 @@ function openEditTransactionModal(id) {
       if (!date || !concept || catSel === '__new__' || isNaN(amountRaw) || amountRaw <= 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
       tx.date = date; tx.concept = concept; tx.cat = catSel; tx.freq = freq;
       tx.amount = tipo === 'ingreso' ? amountRaw : -amountRaw;
+      tx.logo = logoVal || null;
       closeModal(); buildPeriodTabs(); syncControls(); render();
       showToast('Movimiento actualizado.');
     });
@@ -1016,6 +1049,39 @@ function autoCategorize(concept, amount) {
   const fallbackExpense = Object.entries(CATEGORIES).find(([k, c]) => c.kind === 'expense' && c.group === 'variable' && !c.deleted);
   return amount >= 0 ? (fallbackIncome ? fallbackIncome[0] : 'otros_ingresos') : (fallbackExpense ? fallbackExpense[0] : 'variables');
 }
+
+/* =========================================================================
+   15b) LOGOS DE COMERCIOS — detección automática por nombre + override manual
+   ========================================================================= */
+const MERCHANT_LOGOS = [
+  ['mercadona', 'mercadona.es'], ['carrefour', 'carrefour.es'], ['lidl', 'lidl.es'], ['alcampo', 'alcampo.es'],
+  ['dia', 'dia.es'], ['eroski', 'eroski.es'], ['aldi', 'aldi.es'], ['condis', 'condis.es'],
+  ['amazon', 'amazon.es'], ['aliexpress', 'aliexpress.com'], ['ebay', 'ebay.es'], ['corte ingles', 'elcorteingles.es'],
+  ['netflix', 'netflix.com'], ['spotify', 'spotify.com'], ['hbo', 'hbomax.com'], ['disney', 'disneyplus.com'],
+  ['prime video', 'primevideo.com'], ['youtube', 'youtube.com'], ['twitch', 'twitch.tv'],
+  ['zara', 'zara.com'], ['pull and bear', 'pullandbear.com'], ['bershka', 'bershka.com'], ['h&m', 'hm.com'],
+  ['primark', 'primark.com'], ['mango', 'mango.com'], ['decathlon', 'decathlon.es'], ['ikea', 'ikea.com'],
+  ['leroy merlin', 'leroymerlin.es'], ['repsol', 'repsol.es'], ['cepsa', 'cepsa.com'],
+  ['uber', 'uber.com'], ['cabify', 'cabify.com'], ['renfe', 'renfe.com'], ['glovo', 'glovo.com'],
+  ['just eat', 'just-eat.es'], ['ryanair', 'ryanair.com'], ['vueling', 'vueling.com'], ['iberia', 'iberia.com'],
+  ['mcdonalds', 'mcdonalds.es'], ['burger king', 'burgerking.es'], ['starbucks', 'starbucks.es'],
+  ['telepizza', 'telepizza.es'], ['dominos', 'dominospizza.es'],
+  ['movistar', 'movistar.es'], ['vodafone', 'vodafone.es'], ['orange', 'orange.es'],
+  ['iberdrola', 'iberdrola.es'], ['endesa', 'endesa.es'], ['naturgy', 'naturgy.es'],
+  ['paypal', 'paypal.com'], ['apple', 'apple.com'], ['google', 'google.com'], ['microsoft', 'microsoft.com'],
+  ['booking', 'booking.com'], ['airbnb', 'airbnb.com'],
+];
+function detectLogoDomain(concept) {
+  const n = normalize(concept || '');
+  const hit = MERCHANT_LOGOS.find(([kw]) => n.includes(normalize(kw)));
+  return hit ? hit[1] : null;
+}
+function logoImgURL(domain) { return `https://www.google.com/s2/favicons?sz=64&domain=${encodeURIComponent(domain)}`; }
+function renderLogoPreview(domain) {
+  return domain
+    ? `<img src="${logoImgURL(domain)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🏷'">`
+    : `<span class="text-sm">🏷</span>`;
+}
 function parseFlexibleDate(s) { s = (s || '').trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : null; }
 function parseFlexibleAmount(raw) { let s = (raw || '').replace(/[€$\s]/g, ''); if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.'); else if (s.includes(',')) s = s.replace(',', '.'); return parseFloat(s); }
 function parseCSVText(text) {
@@ -1052,7 +1118,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
     }
     const rows = parseCSVText(text);
     if (rows.length === 0) { showToast('No se pudo leer ningún movimiento válido de ese archivo.'); return; }
-    rows.forEach(r => { const cat = autoCategorize(r.concept, r.amount); const freq = (CATEGORIES[cat] && (CATEGORIES[cat].group === 'fijo' || cat === 'nomina')) ? 'Fijo' : 'Variable'; TRANSACTIONS.push(mkTx(r.date, r.concept, cat, freq, r.amount)); });
+    rows.forEach(r => { const cat = autoCategorize(r.concept, r.amount); const freq = (CATEGORIES[cat] && (CATEGORIES[cat].group === 'fijo' || cat === 'nomina')) ? 'Fijo' : 'Variable'; TRANSACTIONS.push(mkTx(r.date, r.concept, cat, freq, r.amount, null, detectLogoDomain(r.concept))); });
     state.viewMode = 'year'; state.year = yearKey(rows[rows.length - 1].date); setFilter('all', null);
     buildPeriodTabs(); syncControls(); render();
     showToast(`Se importaron ${rows.length} movimientos y se categorizaron automáticamente. Revisa la columna «Categoría» si algo no coincide.`);
