@@ -149,6 +149,19 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           Sincronización
         </button>
+        <div class="my-1.5 border-t border-border"></div>
+        <button id="btnImport" type="button" class="profile-menu-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+          Importar CSV
+        </button>
+        <button id="btnExport" type="button" class="profile-menu-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>
+          Exportar
+        </button>
+        <button id="btnImportData" type="button" class="profile-menu-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></svg>
+          Restaurar
+        </button>
       </div>
     </div>
   </aside>
@@ -166,23 +179,7 @@
       <p class="text-inkmuted mt-1.5 text-sm">Ingresos, gastos y ahorro — a tu manera. · <span id="syncStatus" class="font-mono text-xs">⚙ Sin configurar</span></p>
     </div>
     <div class="flex gap-2 flex-wrap justify-end">
-      <button id="btnRecurring" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l4 4-4 4M3 12v-2a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 12v2a4 4 0 0 1-4 4H3"/></svg>
-        Recurrentes
-      </button>
-      <button id="btnImport" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
-        Importar CSV
-      </button>
       <input id="fileInput" type="file" accept=".csv,.txt" class="hidden">
-      <button id="btnExport" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>
-        Exportar
-      </button>
-      <button id="btnImportData" class="btn-outline rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></svg>
-        Restaurar
-      </button>
       <input id="jsonFileInput" type="file" accept=".json" class="hidden">
       <button id="btnAddTx" class="btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -1592,7 +1589,7 @@ function parseCSVText(text) {
   }
   return rows;
 }
-document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileInput').click());
+document.getElementById('btnImport').addEventListener('click', () => { profileMenu.classList.add('hidden'); document.getElementById('fileInput').click(); });
 document.getElementById('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -1680,8 +1677,8 @@ function openRestoreModal() {
   });
   backdrop.classList.remove('hidden');
 }
-document.getElementById('btnExport').addEventListener('click', exportData);
-document.getElementById('btnImportData').addEventListener('click', () => openRestoreModal());
+document.getElementById('btnExport').addEventListener('click', () => { profileMenu.classList.add('hidden'); exportData(); });
+document.getElementById('btnImportData').addEventListener('click', () => { profileMenu.classList.add('hidden'); openRestoreModal(); });
 document.getElementById('jsonFileInput').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) importDataFile(f); e.target.value = ''; });
 
 function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.add('hidden'), 4500); }
@@ -1697,7 +1694,6 @@ document.getElementById('txFilterMonth').addEventListener('change', e => { state
 document.getElementById('txFilterCat').addEventListener('change', e => { state.txFilter.cat = e.target.value; renderTable(); });
 document.getElementById('txFilterClear').addEventListener('click', () => { state.txFilter = { year: 'all', month: 'all', cat: 'all' }; renderTable(); });
 document.getElementById('btnAddTx').addEventListener('click', () => openTransactionModal());
-document.getElementById('btnRecurring').addEventListener('click', () => openRecurringModal());
 
 /* =========================================================================
    16b) SIDEBAR — navegación por vistas, menú de perfil, modo oscuro, modo privado
