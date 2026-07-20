@@ -297,7 +297,7 @@
 </div>
 
 <div id="modalBackdrop" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
-  <div id="modalCard" class="card w-full max-w-md p-6 relative bg-surface"></div>
+  <div id="modalCard" class="card w-full max-w-md p-6 relative bg-surface max-h-[90vh] overflow-y-auto"></div>
 </div>
 <div id="toast" class="hidden fixed bottom-6 right-6 z-50 card px-4 py-3 text-sm fade-in max-w-xs"></div>
 
@@ -837,14 +837,16 @@ function openAccountModal(existing) {
   let logoVal = existing ? (existing.logo || '') : '';
   let logoTouched = !!logoVal;
   let balanceVal = existing ? String(existing.balance) : '';
-  let lotsVal = existing && existing.lots ? existing.lots.map(l => ({ ...l })) : [];
+  let lotSeq = 0;
+  let lotsVal = existing && existing.lots ? existing.lots.map(l => ({ ...l, _id: ++lotSeq })) : [];
   let currentPriceVal = existing && existing.currentPrice != null ? String(existing.currentPrice) : '';
   let currencyVal = existing && existing.currency ? existing.currency : 'EUR';
   const isKnownCoin = existing && existing.symbol && CRYPTO_SYMBOLS[existing.symbol] === existing.cgId;
   let symbolVal = existing && existing.symbol ? (isKnownCoin ? existing.symbol : 'otra') : 'BTC';
   let customLabelVal = existing && !isKnownCoin ? (existing.symbol || '') : '';
   let customIdVal = existing && !isKnownCoin ? (existing.cgId || '') : '';
-  let lotSeq = 0;
+  let editingLotId = null;
+  let lotDraftDate = TODAY, lotDraftPrice = '', lotDraftQty = '';
 
   function lotsBlockHTML(isCripto) {
     const unit = isCripto ? 'unidad' : 'acción';
@@ -857,10 +859,13 @@ function openAccountModal(existing) {
     const reval = currentValue - totalCost;
     const revalPct = totalCost > 0 ? (reval / totalCost) * 100 : 0;
     const rows = lotsVal.map(l => `
-      <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0">
+      <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0 ${l._id === editingLotId ? 'opacity-50' : ''}">
         <span class="text-inkmuted font-mono">${new Date(l.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
         <span class="text-ink">${l.qty} ${unitPlural} × ${fmtMoney(l.price, currencyVal)}</span>
-        <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad">✕</button>
+        <span class="flex items-center gap-2 shrink-0">
+          <button data-editlot="${l._id}" class="text-inkmuted hover:text-ink" title="Editar compra">✎</button>
+          <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad" title="Eliminar compra">✕</button>
+        </span>
       </div>`).join('') || `<p class="text-xs text-inkmuted italic py-1.5">Todavía no has añadido ninguna compra.</p>`;
     return `
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
@@ -885,11 +890,14 @@ function openAccountModal(existing) {
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (fecha · precio · nº ${unitPlural})</label>
       <div class="mt-1.5 mb-2 max-h-32 overflow-y-auto -mr-2 pr-2">${rows}</div>
       <div class="grid grid-cols-3 gap-2 mb-2">
-        <input id="fLotDate" type="date" value="${TODAY}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-        <input id="fLotPrice" type="number" step="0.0001" min="0" placeholder="Precio ${currencyVal === 'USD' ? '$' : '€'}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-        <input id="fLotQty" type="number" step="0.0001" min="0" placeholder="Nº ${unitPlural}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotDate" type="date" value="${lotDraftDate}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotPrice" type="number" step="0.0001" min="0" value="${lotDraftPrice}" placeholder="Precio ${currencyVal === 'USD' ? '$' : '€'}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotQty" type="number" step="0.0001" min="0" value="${lotDraftQty}" placeholder="Nº ${unitPlural}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
       </div>
-      <button id="fAddLot" type="button" class="btn-outline w-full rounded-full py-2 text-xs font-medium mb-4">+ Añadir compra</button>
+      <div class="flex gap-2 mb-4">
+        <button id="fAddLot" type="button" class="btn-outline flex-1 rounded-full py-2 text-xs font-medium">${editingLotId ? 'Guardar cambios en la compra' : '+ Añadir compra'}</button>
+        ${editingLotId ? `<button id="fCancelEditLot" type="button" class="text-xs text-inkmuted hover:text-ink underline shrink-0 px-2">Cancelar</button>` : ''}
+      </div>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Precio actual por ${unit} (${currencyVal === 'USD' ? '$' : '€'})</label>
       <div class="flex items-center gap-2 mt-1.5 mb-4">
         <input id="fCurrentPrice" type="number" step="0.0001" min="0" value="${currentPriceVal}" placeholder="0.00" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
@@ -945,12 +953,33 @@ function openAccountModal(existing) {
         const price = parseFloat(document.getElementById('fLotPrice').value);
         const qty = parseFloat(document.getElementById('fLotQty').value);
         if (!date || isNaN(price) || price < 0 || isNaN(qty) || qty <= 0) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
-        lotsVal.push({ _id: ++lotSeq, date, price, qty });
+        if (editingLotId) {
+          const lot = lotsVal.find(l => l._id === editingLotId);
+          if (lot) { lot.date = date; lot.price = price; lot.qty = qty; }
+          editingLotId = null;
+        } else {
+          lotsVal.push({ _id: ++lotSeq, date, price, qty });
+        }
         if (!currentPriceVal) currentPriceVal = String(price);
+        lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = '';
         paint();
       });
+      const fCancelEditLot = document.getElementById('fCancelEditLot');
+      if (fCancelEditLot) fCancelEditLot.addEventListener('click', () => {
+        editingLotId = null; lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = '';
+        paint();
+      });
+      card.querySelectorAll('[data-editlot]').forEach(b => b.addEventListener('click', () => {
+        const id = parseInt(b.dataset.editlot, 10);
+        const lot = lotsVal.find(l => l._id === id);
+        if (!lot) return;
+        editingLotId = id; lotDraftDate = lot.date; lotDraftPrice = String(lot.price); lotDraftQty = String(lot.qty);
+        paint();
+      }));
       card.querySelectorAll('[data-dellot]').forEach(b => b.addEventListener('click', () => {
-        lotsVal = lotsVal.filter(l => l._id !== parseInt(b.dataset.dellot, 10));
+        const id = parseInt(b.dataset.dellot, 10);
+        lotsVal = lotsVal.filter(l => l._id !== id);
+        if (editingLotId === id) { editingLotId = null; lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = ''; }
         paint();
       }));
       if (isCripto) {
