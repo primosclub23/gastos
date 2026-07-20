@@ -83,6 +83,7 @@
   .nav-item:hover { background: var(--color-surfacealt); color: var(--color-ink); }
   .nav-item.active { background: var(--color-surfacealt); color: var(--color-ink); font-weight: 600; }
   .nav-item svg { flex-shrink: 0; }
+  .nav-subitem { padding-left: 2.35rem; font-size: .8125rem; }
   .profile-menu-item { display: flex; align-items: center; gap: .6rem; width: 100%; padding: .55rem .6rem; border-radius: .6rem; font-size: .8125rem; color: var(--color-ink); background: none; border: none; cursor: pointer; text-align: left; }
   .profile-menu-item:hover { background: var(--color-surfacealt); }
 
@@ -105,18 +106,22 @@
     </div>
     <p class="text-[10px] uppercase tracking-widest text-inkmuted font-mono px-2.5 mb-2">Plataforma</p>
     <nav class="flex flex-col gap-0.5">
-      <a href="#panel-section" data-nav="panel" class="nav-item active">
+      <a href="#panel-section" data-nav="panel" class="nav-item">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
         Panel
       </a>
+      <a href="#gastos-section" data-nav="gastos" class="nav-item active">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M6 21V10M12 21V6M18 21v-8"/></svg>
+        Control de Gastos
+      </a>
+      <button type="button" id="navCategorias" data-nav="categorias" class="nav-item nav-subitem">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="12" height="4" rx="1"/><rect x="3" y="16" width="15" height="4" rx="1"/></svg>
+        Categorías
+      </button>
       <a href="#cuentas-section" data-nav="cuentas" class="nav-item">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
         Cuentas
       </a>
-      <button type="button" id="navCategorias" data-nav="categorias" class="nav-item">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="12" height="4" rx="1"/><rect x="3" y="16" width="15" height="4" rx="1"/></svg>
-        Categorías
-      </button>
       <a href="#transacciones-section" data-nav="transacciones" class="nav-item">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h9l4 4v16H6V2Z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
         Transacciones
@@ -186,10 +191,19 @@
     </div>
   </header>
 
+  <!-- ============ PANEL (resumen global — pendiente de definir) ============ -->
+  <section id="panel-section" class="hidden mb-8">
+    <div class="card p-10 text-center">
+      <p class="text-3xl mb-2">📊</p>
+      <p class="text-sm text-ink font-medium">Próximamente</p>
+      <p class="text-xs text-inkmuted mt-1 max-w-sm mx-auto">Aquí verás un resumen global de todas tus cuentas junto con tu control de gastos, en un único vistazo. Lo iremos definiendo más adelante.</p>
+    </div>
+  </section>
+
+  <section id="gastos-section">
   <!-- ============ REMINDER BANNER ============ -->
   <div id="reminderBanner" class="hidden mb-4"></div>
 
-  <section id="panel-section">
   <!-- ============ PERIOD CONTROLS ============ -->
   <div class="flex flex-wrap items-center gap-3 mb-6">
     <div id="viewToggle" class="flex bg-surfacealt rounded-full p-1"></div>
@@ -1647,7 +1661,7 @@ document.getElementById('btnRecurring').addEventListener('click', () => openRecu
 /* =========================================================================
    16b) SIDEBAR — navegación por vistas, menú de perfil, modo oscuro, modo privado
    ========================================================================= */
-const VIEW_SECTIONS = { panel: 'panel-section', cuentas: 'cuentas-section', transacciones: 'transacciones-section' };
+const VIEW_SECTIONS = { panel: 'panel-section', gastos: 'gastos-section', cuentas: 'cuentas-section', transacciones: 'transacciones-section' };
 function showView(name) {
   Object.entries(VIEW_SECTIONS).forEach(([key, id]) => document.getElementById(id).classList.toggle('hidden', key !== name));
   window.scrollTo({ top: 0 });
