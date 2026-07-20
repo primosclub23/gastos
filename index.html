@@ -326,6 +326,10 @@ const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','a
 
 function normalize(str) { return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function fmtEUR(n) { const s = n < 0 ? '-' : ''; return s + Math.abs(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; }
+function fmtMoney(n, currency) {
+  if (currency === 'USD') { const s = n < 0 ? '-' : ''; return s + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  return fmtEUR(n);
+}
 function pad2(n) { return String(n).padStart(2, '0'); }
 function monthKey(d) { return d.slice(0, 7); }
 function yearKey(d) { return d.slice(0, 4); }
@@ -379,12 +383,13 @@ const CRYPTO_SYMBOLS = {
   DOT: 'polkadot', MATIC: 'matic-network', LTC: 'litecoin', BNB: 'binancecoin', USDT: 'tether',
   USDC: 'usd-coin', AVAX: 'avalanche-2', LINK: 'chainlink',
 };
-async function fetchCryptoPriceById(id) {
+async function fetchCryptoPriceById(id, currency) {
   if (!id) throw new Error('falta el id de CoinGecko');
-  const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=eur`);
+  const vs = currency === 'USD' ? 'usd' : 'eur';
+  const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=${vs}`);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
-  const price = json[id] && json[id].eur;
+  const price = json[id] && json[id][vs];
   if (price == null) throw new Error('moneda no encontrada en CoinGecko');
   return price;
 }
@@ -778,9 +783,9 @@ function renderAccounts() {
       const revalPct = accRevaluationPct(acc);
       deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
-      deltaLabel = `${reval >= 0 ? '+' : ''}${fmtEUR(reval)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
+      deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
       const unitLabel = isCripto ? (acc.symbol || '') : 'acc.';
-      subtitle = `${accTotalShares(acc)} ${unitLabel} · promedio ${fmtEUR(accAvgPrice(acc))}`;
+      subtitle = `${accTotalShares(acc)} ${unitLabel} · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}`;
     } else {
       const delta = accountDelta(acc);
       deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
@@ -801,7 +806,7 @@ function renderAccounts() {
           </div>
         </div>
         <div class="text-right shrink-0">
-          <p class="money font-display text-xl text-ink" style="font-weight:500;">${fmtEUR(acc.balance)}</p>
+          <p class="money font-display text-xl text-ink" style="font-weight:500;">${fmtMoney(acc.balance, acc.currency)}</p>
           <p class="money text-xs font-mono ${deltaColor}">${deltaLabel}</p>
         </div>
       </div>
@@ -834,6 +839,7 @@ function openAccountModal(existing) {
   let balanceVal = existing ? String(existing.balance) : '';
   let lotsVal = existing && existing.lots ? existing.lots.map(l => ({ ...l })) : [];
   let currentPriceVal = existing && existing.currentPrice != null ? String(existing.currentPrice) : '';
+  let currencyVal = existing && existing.currency ? existing.currency : 'EUR';
   const isKnownCoin = existing && existing.symbol && CRYPTO_SYMBOLS[existing.symbol] === existing.cgId;
   let symbolVal = existing && existing.symbol ? (isKnownCoin ? existing.symbol : 'otra') : 'BTC';
   let customLabelVal = existing && !isKnownCoin ? (existing.symbol || '') : '';
@@ -853,10 +859,15 @@ function openAccountModal(existing) {
     const rows = lotsVal.map(l => `
       <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0">
         <span class="text-inkmuted font-mono">${new Date(l.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-        <span class="text-ink">${l.qty} ${unitPlural} × ${fmtEUR(l.price)}</span>
+        <span class="text-ink">${l.qty} ${unitPlural} × ${fmtMoney(l.price, currencyVal)}</span>
         <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad">✕</button>
       </div>`).join('') || `<p class="text-xs text-inkmuted italic py-1.5">Todavía no has añadido ninguna compra.</p>`;
     return `
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
+      <div class="flex gap-2 mt-1.5 mb-4">
+        <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
+        <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
+      </div>
       ${isCripto ? `
         <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Activo</label>
         <select id="fSymbol" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
@@ -875,20 +886,20 @@ function openAccountModal(existing) {
       <div class="mt-1.5 mb-2 max-h-32 overflow-y-auto -mr-2 pr-2">${rows}</div>
       <div class="grid grid-cols-3 gap-2 mb-2">
         <input id="fLotDate" type="date" value="${TODAY}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-        <input id="fLotPrice" type="number" step="0.0001" min="0" placeholder="Precio €" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotPrice" type="number" step="0.0001" min="0" placeholder="Precio ${currencyVal === 'USD' ? '$' : '€'}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
         <input id="fLotQty" type="number" step="0.0001" min="0" placeholder="Nº ${unitPlural}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
       </div>
       <button id="fAddLot" type="button" class="btn-outline w-full rounded-full py-2 text-xs font-medium mb-4">+ Añadir compra</button>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Precio actual por ${unit} (€)</label>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Precio actual por ${unit} (${currencyVal === 'USD' ? '$' : '€'})</label>
       <div class="flex items-center gap-2 mt-1.5 mb-4">
         <input id="fCurrentPrice" type="number" step="0.0001" min="0" value="${currentPriceVal}" placeholder="0.00" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
         ${isCripto ? `<button id="fFetchPrice" type="button" title="Consultar precio actual" class="btn-outline rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap">🔄 Auto</button>` : ''}
       </div>
       <div class="card p-3 mb-5 grid grid-cols-2 gap-2 text-xs">
         <div><p class="text-inkmuted">Nº ${unitPlural}</p><p class="text-ink font-mono">${totalShares}</p></div>
-        <div><p class="text-inkmuted">Precio promedio</p><p class="text-ink font-mono">${fmtEUR(avgPrice)}</p></div>
-        <div><p class="text-inkmuted">Valor actual</p><p class="text-ink font-mono">${fmtEUR(currentValue)}</p></div>
-        <div><p class="text-inkmuted">Revalorización</p><p class="font-mono ${reval >= 0 ? 'text-good' : 'text-bad'}">${reval >= 0 ? '+' : ''}${fmtEUR(reval)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p></div>
+        <div><p class="text-inkmuted">Precio promedio</p><p class="text-ink font-mono">${fmtMoney(avgPrice, currencyVal)}</p></div>
+        <div><p class="text-inkmuted">Valor actual</p><p class="text-ink font-mono">${fmtMoney(currentValue, currencyVal)}</p></div>
+        <div><p class="text-inkmuted">Revalorización</p><p class="font-mono ${reval >= 0 ? 'text-good' : 'text-bad'}">${reval >= 0 ? '+' : ''}${fmtMoney(reval, currencyVal)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p></div>
       </div>`;
   }
 
@@ -927,6 +938,7 @@ function openAccountModal(existing) {
       if (!logoTouched) { logoVal = detectLogoDomain(bankVal) || ''; document.getElementById('fLogoPreview').innerHTML = renderLogoPreview(logoVal); }
     });
     if (isLots) {
+      card.querySelectorAll('[data-currency]').forEach(b => b.addEventListener('click', () => { currencyVal = b.dataset.currency; paint(); }));
       document.getElementById('fCurrentPrice').addEventListener('input', e => { currentPriceVal = e.target.value; });
       document.getElementById('fAddLot').addEventListener('click', () => {
         const date = document.getElementById('fLotDate').value;
@@ -953,10 +965,10 @@ function openAccountModal(existing) {
           const label = symbolVal === 'otra' ? (customLabelVal.trim() || cgId) : symbolVal;
           btn.disabled = true; btn.textContent = '…';
           try {
-            const price = await fetchCryptoPriceById(cgId);
+            const price = await fetchCryptoPriceById(cgId, currencyVal);
             currentPriceVal = String(price);
             paint();
-            showToast(`Precio de ${label} actualizado: ${fmtEUR(price)}`);
+            showToast(`Precio de ${label} actualizado: ${fmtMoney(price, currencyVal)}`);
           } catch (err) {
             showToast('No se pudo consultar el precio automáticamente: ' + err.message);
             btn.disabled = false; btn.textContent = '🔄 Auto';
@@ -982,7 +994,7 @@ function openAccountModal(existing) {
         const currentPrice = parseFloat(currentPriceVal);
         if (isNaN(currentPrice) || currentPrice < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
         balance = accTotalShares({ lots: lotsVal }) * currentPrice;
-        extra = { lots: lotsVal.map(({ _id, ...l }) => l), currentPrice };
+        extra = { lots: lotsVal.map(({ _id, ...l }) => l), currentPrice, currency: currencyVal };
         if (isCripto) {
           if (symbolVal === 'otra') {
             const cgId = customIdVal.trim();
