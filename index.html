@@ -365,14 +365,13 @@ const CRYPTO_SYMBOLS = {
   DOT: 'polkadot', MATIC: 'matic-network', LTC: 'litecoin', BNB: 'binancecoin', USDT: 'tether',
   USDC: 'usd-coin', AVAX: 'avalanche-2', LINK: 'chainlink',
 };
-async function fetchCryptoPrice(symbol) {
-  const id = CRYPTO_SYMBOLS[symbol];
-  if (!id) throw new Error('símbolo no soportado');
-  const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=eur`);
+async function fetchCryptoPriceById(id) {
+  if (!id) throw new Error('falta el id de CoinGecko');
+  const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=eur`);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
   const price = json[id] && json[id].eur;
-  if (price == null) throw new Error('respuesta inesperada');
+  if (price == null) throw new Error('moneda no encontrada en CoinGecko');
   return price;
 }
 function accTotalShares(acc) { const sum = (acc.lots || []).reduce((s, l) => s + l.qty, 0); return Math.round(sum * 1e8) / 1e8; }
@@ -821,7 +820,10 @@ function openAccountModal(existing) {
   let balanceVal = existing ? String(existing.balance) : '';
   let lotsVal = existing && existing.lots ? existing.lots.map(l => ({ ...l })) : [];
   let currentPriceVal = existing && existing.currentPrice != null ? String(existing.currentPrice) : '';
-  let symbolVal = existing && existing.symbol ? existing.symbol : 'BTC';
+  const isKnownCoin = existing && existing.symbol && CRYPTO_SYMBOLS[existing.symbol] === existing.cgId;
+  let symbolVal = existing && existing.symbol ? (isKnownCoin ? existing.symbol : 'otra') : 'BTC';
+  let customLabelVal = existing && !isKnownCoin ? (existing.symbol || '') : '';
+  let customIdVal = existing && !isKnownCoin ? (existing.cgId || '') : '';
   let lotSeq = 0;
 
   function lotsBlockHTML(isCripto) {
@@ -845,7 +847,15 @@ function openAccountModal(existing) {
         <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Activo</label>
         <select id="fSymbol" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
           ${Object.keys(CRYPTO_SYMBOLS).map(s => `<option value="${s}" ${s === symbolVal ? 'selected' : ''}>${s}</option>`).join('')}
+          <option value="otra" ${symbolVal === 'otra' ? 'selected' : ''}>Otra criptomoneda…</option>
         </select>
+        ${symbolVal === 'otra' ? `
+          <div class="grid grid-cols-2 gap-2 mb-1">
+            <input id="fCustomLabel" type="text" value="${customLabelVal}" placeholder="Símbolo (ej. ARMY)" class="focus-ring rounded-lg border border-border px-3 py-2 text-sm" />
+            <input id="fCustomId" type="text" value="${customIdVal}" placeholder="id de CoinGecko (ej. army-3)" class="focus-ring rounded-lg border border-border px-3 py-2 text-sm" />
+          </div>
+          <p class="text-xs text-inkmuted mb-4">El id es lo que aparece al final de la URL en CoinGecko: coingecko.com/es/monedas/<strong>army-3</strong></p>
+        ` : ''}
       ` : ''}
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (fecha · precio · nº ${unitPlural})</label>
       <div class="mt-1.5 mb-2 max-h-32 overflow-y-auto -mr-2 pr-2">${rows}</div>
@@ -918,15 +928,21 @@ function openAccountModal(existing) {
         paint();
       }));
       if (isCripto) {
-        document.getElementById('fSymbol').addEventListener('change', e => { symbolVal = e.target.value; });
+        document.getElementById('fSymbol').addEventListener('change', e => { symbolVal = e.target.value; paint(); });
+        const fCustomLabel = document.getElementById('fCustomLabel');
+        const fCustomId = document.getElementById('fCustomId');
+        if (fCustomLabel) fCustomLabel.addEventListener('input', e => customLabelVal = e.target.value);
+        if (fCustomId) fCustomId.addEventListener('input', e => customIdVal = e.target.value);
         document.getElementById('fFetchPrice').addEventListener('click', async () => {
           const btn = document.getElementById('fFetchPrice');
+          const cgId = symbolVal === 'otra' ? customIdVal.trim() : CRYPTO_SYMBOLS[symbolVal];
+          const label = symbolVal === 'otra' ? (customLabelVal.trim() || cgId) : symbolVal;
           btn.disabled = true; btn.textContent = '…';
           try {
-            const price = await fetchCryptoPrice(symbolVal);
+            const price = await fetchCryptoPriceById(cgId);
             currentPriceVal = String(price);
             paint();
-            showToast(`Precio de ${symbolVal} actualizado: ${fmtEUR(price)}`);
+            showToast(`Precio de ${label} actualizado: ${fmtEUR(price)}`);
           } catch (err) {
             showToast('No se pudo consultar el precio automáticamente: ' + err.message);
             btn.disabled = false; btn.textContent = '🔄 Auto';
@@ -953,7 +969,17 @@ function openAccountModal(existing) {
         if (isNaN(currentPrice) || currentPrice < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
         balance = accTotalShares({ lots: lotsVal }) * currentPrice;
         extra = { lots: lotsVal.map(({ _id, ...l }) => l), currentPrice };
-        if (isCripto) extra.symbol = symbolVal;
+        if (isCripto) {
+          if (symbolVal === 'otra') {
+            const cgId = customIdVal.trim();
+            if (!cgId) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+            extra.symbol = customLabelVal.trim().toUpperCase() || cgId;
+            extra.cgId = cgId;
+          } else {
+            extra.symbol = symbolVal;
+            extra.cgId = CRYPTO_SYMBOLS[symbolVal];
+          }
+        }
       } else {
         balance = parseFloat(document.getElementById('fBalance').value);
         if (isNaN(balance)) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
