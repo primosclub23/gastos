@@ -233,7 +233,7 @@
   </section>
 
   <!-- ============ CUENTAS (próximamente) ============ -->
-  <section id="cuentas-section" class="mb-8">
+  <section id="cuentas-section" class="hidden mb-8">
     <div class="flex items-center justify-between mb-4">
       <div>
         <h2 class="font-display text-lg text-ink" style="font-weight:560;">Cuentas</h2>
@@ -248,7 +248,7 @@
   </section>
 
   <!-- ============ TRANSACTIONS TABLE ============ -->
-  <div id="transacciones-section" class="card p-6">
+  <div id="transacciones-section" class="hidden card p-6">
     <div class="flex items-baseline justify-between mb-1">
       <h2 class="font-display text-lg text-ink" style="font-weight:560;">Movimientos</h2>
       <span id="txCount" class="font-mono text-xs text-inkmuted"></span>
@@ -1479,17 +1479,20 @@ document.getElementById('btnAddTx').addEventListener('click', () => openTransact
 document.getElementById('btnRecurring').addEventListener('click', () => openRecurringModal());
 
 /* =========================================================================
-   16b) SIDEBAR — navegación, menú de perfil, modo oscuro, modo privado
+   16b) SIDEBAR — navegación por vistas, menú de perfil, modo oscuro, modo privado
    ========================================================================= */
+const VIEW_SECTIONS = { panel: 'panel-section', cuentas: 'cuentas-section', transacciones: 'transacciones-section' };
+function showView(name) {
+  Object.entries(VIEW_SECTIONS).forEach(([key, id]) => document.getElementById(id).classList.toggle('hidden', key !== name));
+  window.scrollTo({ top: 0 });
+}
 document.querySelectorAll('.nav-item[data-nav]').forEach(el => el.addEventListener('click', (e) => {
+  const nav = el.dataset.nav;
+  if (!VIEW_SECTIONS[nav]) return;
   document.querySelectorAll('.nav-item[data-nav]').forEach(n => n.classList.remove('active'));
   el.classList.add('active');
-  const href = el.getAttribute('href');
-  if (href && href.startsWith('#')) {
-    e.preventDefault();
-    const target = document.querySelector(href);
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+  e.preventDefault();
+  showView(nav);
 }));
 
 const profileMenu = document.getElementById('profileMenu');
