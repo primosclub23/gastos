@@ -234,15 +234,17 @@
 
   <!-- ============ CUENTAS (próximamente) ============ -->
   <section id="cuentas-section" class="mb-8">
-    <div class="mb-4">
-      <h2 class="font-display text-lg text-ink" style="font-weight:560;">Cuentas</h2>
-      <p class="text-xs text-inkmuted mt-1">Plan de pensiones, inversiones y demás cuentas — próximamente</p>
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="font-display text-lg text-ink" style="font-weight:560;">Cuentas</h2>
+        <p class="text-xs text-inkmuted mt-1">Ver y administrar tus cuentas — saldo manual</p>
+      </div>
+      <button id="btnAddAccount" class="btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Crear Cuenta
+      </button>
     </div>
-    <div class="card p-10 text-center">
-      <p class="text-3xl mb-2">🏦</p>
-      <p class="text-sm text-ink font-medium">Próximamente</p>
-      <p class="text-xs text-inkmuted mt-1 max-w-sm mx-auto">Aquí podrás añadir tus cuentas (plan de pensiones, inversiones, ahorro…) para verlas junto a tus movimientos del día a día.</p>
-    </div>
+    <div id="accountsGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-5"></div>
   </section>
 
   <!-- ============ TRANSACTIONS TABLE ============ -->
@@ -344,13 +346,22 @@ function categoryOptionsForKind(kind, selectedKey) {
 /* =========================================================================
    3) RECURRING SERIES + ONE-OFF TRANSACTIONS — empezamos limpio en julio 2026
    ========================================================================= */
-let TX_SEQ = 0, REC_SEQ = 0;
+let TX_SEQ = 0, REC_SEQ = 0, ACC_SEQ = 0;
 function mkTx(date, concept, cat, freq, amount, seriesId, logo) { return { id: ++TX_SEQ, date, concept, cat, freq, amount, seriesId: seriesId || null, logo: logo || null }; }
 function mkSeries(concept, cat, amount, startDate, endDate, reminderDays, logo) {
   return { id: ++REC_SEQ, concept, cat, amount, dayOfMonth: parseInt(startDate.split('-')[2], 10), startDate, endDate: endDate || null, reminderDays: reminderDays != null ? reminderDays : null, logo: logo || null };
 }
+function mkAccount(name, type, bank, logo, balance) {
+  return { id: ++ACC_SEQ, name, type, bank: bank || null, logo: logo || null, balance, history: [{ date: TODAY, balance }] };
+}
+const ACCOUNT_TYPES = {
+  corriente: 'Cuenta Corriente', credito: 'Tarjeta de Crédito', inversion: 'Inversión',
+  prestamo: 'Préstamo', inmueble: 'Bienes Raíces', pension: 'Jubilación / Pensión',
+  ahorro: 'Ahorros', otros: 'Otros',
+};
 
 let TRANSACTIONS = [];  // sin datos de ejemplo — listo para tus movimientos reales
+let ACCOUNTS = [];      // cuentas manuales (plan de pensiones, inversiones, etc.)
 let RECURRING = [];     // añade aquí tus fijos (alquiler, nómina, suscripciones…) desde "Añadir movimiento" o "Recurrentes"
 
 function generateSeriesTx(s) {
@@ -694,6 +705,139 @@ function renderTable() {
   body.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => { const idx = TRANSACTIONS.findIndex(t => t.id === parseInt(btn.dataset.del, 10)); if (idx > -1) { TRANSACTIONS.splice(idx, 1); buildPeriodTabs(); render(); } }));
   body.querySelectorAll('button[data-recur]').forEach(btn => btn.addEventListener('click', openRecurringModal));
 }
+
+/* =========================================================================
+   11b) CUENTAS (saldo manual)
+   ========================================================================= */
+function sparklineSVG(history) {
+  const W = 300, H = 56, PAD = 4;
+  if (!history || history.length < 2) {
+    return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-full" preserveAspectRatio="none"><line x1="0" y1="${H - PAD}" x2="${W}" y2="${H - PAD}" stroke="currentColor" stroke-width="2" opacity=".5"/></svg>`;
+  }
+  const vals = history.map(h => h.balance);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = (max - min) || 1;
+  const stepX = W / (history.length - 1);
+  const points = history.map((h, i) => {
+    const x = i * stepX;
+    const y = H - PAD - ((h.balance - min) / range) * (H - PAD * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-full" preserveAspectRatio="none"><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+function accountDelta(acc) {
+  if (!acc.history || acc.history.length < 2) return 0;
+  const currentMonth = monthKey(TODAY);
+  const prev = [...acc.history].reverse().find(h => monthKey(h.date) !== currentMonth);
+  if (!prev) return 0;
+  return acc.balance - prev.balance;
+}
+function renderAccounts() {
+  const grid = document.getElementById('accountsGrid');
+  const cards = ACCOUNTS.map(acc => {
+    const delta = accountDelta(acc);
+    const deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
+    const deltaArrow = delta > 0 ? '↗' : (delta < 0 ? '↘' : '↗');
+    const iconHTML = acc.logo
+      ? `<img src="${logoImgURL(acc.logo)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🏦'">`
+      : `<span class="text-sm">🏦</span>`;
+    return `<div class="card p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="w-7 h-7 rounded-full bg-surfacealt overflow-hidden shrink-0 flex items-center justify-center">${iconHTML}</span>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-ink truncate">${acc.name}</p>
+            <p class="text-xs text-inkmuted truncate">${acc.bank || ACCOUNT_TYPES[acc.type] || 'Otros'}</p>
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <p class="money font-display text-xl text-ink" style="font-weight:500;">${fmtEUR(acc.balance)}</p>
+          <p class="money text-xs font-mono ${deltaColor}">${fmtEUR(Math.abs(delta))} vs mes anterior ${deltaArrow}</p>
+        </div>
+      </div>
+      <div class="h-12 text-ink opacity-70 mb-4">${sparklineSVG(acc.history)}</div>
+      <div class="flex items-center justify-between">
+        <button data-updatebal="${acc.id}" class="btn-outline rounded-full px-3 py-1.5 text-xs font-medium flex items-center gap-1.5">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l4 4-4 4M3 12v-2a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 12v2a4 4 0 0 1-4 4H3"/></svg>
+          Actualizar balance
+        </button>
+        <button data-details="${acc.id}" class="text-xs text-inkmuted hover:text-ink font-medium">Detalles →</button>
+      </div>
+    </div>`;
+  }).join('');
+  grid.innerHTML = cards + `
+    <button id="btnAddAccountCard" class="card border-dashed flex flex-col items-center justify-center gap-1.5 py-10 text-inkmuted hover:text-ink hover:border-border-strong transition-colors" style="border-style:dashed;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+      <span class="text-sm font-medium">Crear Cuenta</span>
+    </button>`;
+  grid.querySelectorAll('[data-updatebal]').forEach(b => b.addEventListener('click', () => openAccountModal(ACCOUNTS.find(a => a.id === parseInt(b.dataset.updatebal, 10)))));
+  grid.querySelectorAll('[data-details]').forEach(b => b.addEventListener('click', () => openAccountModal(ACCOUNTS.find(a => a.id === parseInt(b.dataset.details, 10)))));
+  document.getElementById('btnAddAccountCard').addEventListener('click', () => openAccountModal(null));
+}
+function openAccountModal(existing) {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let nameVal = existing ? existing.name : '';
+  let typeVal = existing ? existing.type : '';
+  let bankVal = existing ? (existing.bank || '') : '';
+  let logoVal = existing ? (existing.logo || '') : '';
+  let logoTouched = !!logoVal;
+  let balanceVal = existing ? String(existing.balance) : '';
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-1" style="font-weight:560;">${existing ? 'Actualizar cuenta' : 'Crear Cuenta'}</h3>
+      <p class="text-xs text-inkmuted mb-4">Crea una cuenta bancaria, un préstamo o una propiedad para seguirla manualmente.</p>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Nombre</label>
+      <input id="fName" type="text" value="${nameVal}" placeholder="Nombre de cuenta" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Tipo de Cuenta</label>
+      <select id="fType" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
+        <option value="">Seleccionar tipo de cuenta</option>
+        ${Object.entries(ACCOUNT_TYPES).map(([k, label]) => `<option value="${k}" ${k === typeVal ? 'selected' : ''}>${label}</option>`).join('')}
+      </select>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Banco / Entidad (opcional)</label>
+      <div class="flex items-center gap-2 mt-1.5 mb-4">
+        <span id="fLogoPreview" class="w-8 h-8 rounded-full bg-surfacealt flex items-center justify-center overflow-hidden shrink-0">${renderLogoPreview(logoVal)}</span>
+        <input id="fBank" type="text" value="${bankVal}" placeholder="ej. BBVA" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
+      </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">${existing ? 'Balance actual (€)' : 'Saldo inicial (€)'}</label>
+      <input id="fBalance" type="number" step="0.01" value="${balanceVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+      <div class="flex gap-2">
+        ${existing ? `<button id="mDelete" class="btn-outline flex-1 rounded-full py-2.5 text-sm font-medium" style="color:#B15D4A; border-color:#B15D4A;">Eliminar</button>` : ''}
+        <button id="mSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium">${existing ? 'Guardar cambios' : 'Crear cuenta'}</button>
+      </div>`;
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('fName').addEventListener('input', e => nameVal = e.target.value);
+    document.getElementById('fType').addEventListener('change', e => typeVal = e.target.value);
+    document.getElementById('fBalance').addEventListener('input', e => balanceVal = e.target.value);
+    document.getElementById('fBank').addEventListener('input', e => {
+      bankVal = e.target.value;
+      if (!logoTouched) { logoVal = detectLogoDomain(bankVal) || ''; document.getElementById('fLogoPreview').innerHTML = renderLogoPreview(logoVal); }
+    });
+    if (existing) document.getElementById('mDelete').addEventListener('click', () => {
+      if (!confirm(`¿Eliminar la cuenta "${existing.name}"?`)) return;
+      const idx = ACCOUNTS.findIndex(a => a.id === existing.id);
+      if (idx > -1) ACCOUNTS.splice(idx, 1);
+      closeModal(); renderAccounts(); scheduleGhSave();
+      showToast('Cuenta eliminada.');
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const name = document.getElementById('fName').value.trim();
+      const balance = parseFloat(document.getElementById('fBalance').value);
+      if (!name || !typeVal || isNaN(balance)) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      if (existing) {
+        existing.name = name; existing.type = typeVal; existing.bank = bankVal || null; existing.logo = logoVal || null;
+        if (balance !== existing.balance) { existing.balance = balance; existing.history.push({ date: TODAY, balance }); }
+        showToast('Cuenta actualizada.');
+      } else {
+        ACCOUNTS.push(mkAccount(name, typeVal, bankVal, logoVal, balance));
+        showToast('Cuenta creada.');
+      }
+      closeModal(); renderAccounts(); scheduleGhSave();
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+document.getElementById('btnAddAccount').addEventListener('click', () => openAccountModal(null));
 
 /* =========================================================================
    12) MODAL — create / edit category
@@ -1188,6 +1332,11 @@ const MERCHANT_LOGOS = [
   ['iberdrola', 'iberdrola.es'], ['endesa', 'endesa.es'], ['naturgy', 'naturgy.es'],
   ['paypal', 'paypal.com'], ['apple', 'apple.com'], ['google', 'google.com'], ['microsoft', 'microsoft.com'],
   ['booking', 'booking.com'], ['airbnb', 'airbnb.com'],
+  ['bbva', 'bbva.es'], ['santander', 'bancosantander.es'], ['caixabank', 'caixabank.es'], ['la caixa', 'caixabank.es'],
+  ['sabadell', 'bancsabadell.com'], ['bankinter', 'bankinter.com'], ['ing', 'ing.es'], ['openbank', 'openbank.es'],
+  ['revolut', 'revolut.com'], ['n26', 'n26.com'], ['evobanco', 'evobanco.com'], ['unicaja', 'unicajabanco.es'],
+  ['kutxabank', 'kutxabank.es'], ['abanca', 'abanca.com'], ['imaginbank', 'imaginbank.com'], ['myinvestor', 'myinvestor.es'],
+  ['trade republic', 'traderepublic.com'], ['degiro', 'degiro.es'], ['indexa', 'indexacapital.com'],
 ];
 function detectLogoDomain(concept) {
   const n = normalize(concept || '');
@@ -1248,7 +1397,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
    16) EXPORTAR / RESTAURAR DATOS (copia de seguridad completa en JSON)
    ========================================================================= */
 function exportData() {
-  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ };
+  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1267,9 +1416,11 @@ function tryRestoreFromJSON(rawText) {
     Object.assign(CATEGORIES, data.categories || {});
     TRANSACTIONS = data.transactions.map(t => ({ ...t }));
     RECURRING = data.recurring.map(s => ({ ...s }));
+    ACCOUNTS = Array.isArray(data.accounts) ? data.accounts.map(a => ({ ...a })) : [];
     TX_SEQ = data.txSeq || Math.max(0, ...TRANSACTIONS.map(t => t.id || 0), 0);
     REC_SEQ = data.recSeq || Math.max(0, ...RECURRING.map(s => s.id || 0), 0);
     ORDER_SEQ = data.orderSeq || Math.max(100, ...Object.values(CATEGORIES).map(c => c.order || 0));
+    ACC_SEQ = data.accSeq || Math.max(0, ...ACCOUNTS.map(a => a.id || 0), 0);
     regenerateAllRecurring();
     setFilter('all', null);
     buildFilterBar(); buildPeriodTabs(); syncControls(); render();
@@ -1317,7 +1468,7 @@ function showToast(msg) { const t = document.getElementById('toast'); t.textCont
 /* =========================================================================
    17) MASTER RENDER + INIT
    ========================================================================= */
-function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); scheduleGhSave(); }
+function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); scheduleGhSave(); }
 
 document.getElementById('searchInput').addEventListener('input', (e) => handleSearchInput(e.target.value));
 document.getElementById('txFilterYear').addEventListener('change', e => { state.txFilter.year = e.target.value; renderTable(); });
@@ -1412,9 +1563,11 @@ async function ghLoad() {
     }
     if (data && Array.isArray(data.transactions)) TRANSACTIONS = data.transactions.map(t => ({ ...t }));
     if (data && Array.isArray(data.recurring)) RECURRING = data.recurring.map(s => ({ ...s }));
+    if (data && Array.isArray(data.accounts)) ACCOUNTS = data.accounts.map(a => ({ ...a }));
     TX_SEQ = data.txSeq || TX_SEQ;
     REC_SEQ = data.recSeq || REC_SEQ;
     ORDER_SEQ = data.orderSeq || ORDER_SEQ;
+    ACC_SEQ = data.accSeq || ACC_SEQ;
     setSyncStatus('ok');
   } catch (e) {
     setSyncStatus('error');
@@ -1426,7 +1579,7 @@ async function ghSave() {
   const cfg = getGhConfig();
   if (!cfg || !cfg.token || !cfg.owner || !cfg.repo) return;
   setSyncStatus('guardando');
-  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ };
+  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ };
   const body = { message: 'Actualización automática · ' + new Date().toISOString(), content: utf8ToB64(JSON.stringify(payload, null, 2)), branch: cfg.branch || 'main' };
   if (ghFileSha) body.sha = ghFileSha;
   try {
