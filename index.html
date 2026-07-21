@@ -825,39 +825,102 @@ function accountDelta(acc) {
   if (!prev) return 0;
   return acc.balance - prev.balance;
 }
+function cryptoIconURL(symbol) { return `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/128/color/${symbol.toLowerCase()}.png`; }
+function cryptoAssetRowHTML(g, acc, isLast) {
+  const qty = groupQty(g.lots);
+  const avg = groupAvgPrice(g.lots);
+  const price = accCurrentPriceFor(acc, g.symbol);
+  const value = qty * price;
+  const cost = groupCost(g.lots);
+  const pnl = value - cost;
+  const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
+  const pnlColor = pnl > 0 ? 'text-good' : (pnl < 0 ? 'text-bad' : 'text-inkmuted');
+  return `<div class="flex items-center justify-between py-2 ${isLast ? '' : 'border-b border-border'}">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <span class="w-7 h-7 rounded-full bg-surfacealt overflow-hidden shrink-0 flex items-center justify-center">
+        <img src="${cryptoIconURL(g.symbol)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🪙'">
+      </span>
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-ink">${g.symbol}</p>
+        <p class="text-[11px] text-inkmuted whitespace-nowrap">${fmtQty(qty)} · promedio ${fmtMoney(avg, acc.currency)}</p>
+      </div>
+    </div>
+    <div class="text-right shrink-0">
+      <p class="money text-xs font-mono text-ink">${fmtMoney(value, acc.currency)}</p>
+      <p class="money text-[11px] font-mono ${pnlColor}">${pnl >= 0 ? '+' : ''}${fmtMoney(pnl, acc.currency)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</p>
+    </div>
+  </div>`;
+}
+async function refreshCryptoPrices(accId) {
+  const acc = ACCOUNTS.find(a => a.id === accId);
+  if (!acc) return;
+  const groups = accAssetGroups(acc).filter(g => g.cgId);
+  if (!groups.length) { showToast('Esta cuenta no tiene activos con id de CoinGecko para actualizar.'); return; }
+  const btn = document.querySelector(`[data-refreshprices="${accId}"]`);
+  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = 'Actualizando…'; }
+  const results = await Promise.allSettled(groups.map(g => fetchCryptoPriceById(g.cgId, acc.currency).then(price => ({ symbol: g.symbol, price }))));
+  if (!acc.currentPrices) acc.currentPrices = {};
+  let ok = 0, failed = 0;
+  results.forEach(r => { if (r.status === 'fulfilled') { acc.currentPrices[r.value.symbol] = r.value.price; ok++; } else failed++; });
+  const newBalance = accCryptoCurrentValue(acc);
+  if (newBalance !== acc.balance) { acc.balance = newBalance; acc.history.push({ date: TODAY, balance: newBalance }); }
+  renderAccounts();
+  scheduleGhSave();
+  showToast(failed ? `Precios actualizados: ${ok} ok, ${failed} fallaron.` : `Precios actualizados (${ok} activo${ok === 1 ? '' : 's'}).`);
+}
 function renderAccounts() {
   const grid = document.getElementById('accountsGrid');
   const cards = ACCOUNTS.map(acc => {
     const isLots = LOT_ACCOUNT_TYPES.includes(acc.type);
     const isCripto = acc.type === 'cripto';
-    let deltaLabel, deltaColor, deltaArrow, subtitle;
+    const iconHTML = acc.logo
+      ? `<img src="${logoImgURL(acc.logo)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🏦'">`
+      : `<span class="text-sm">${isCripto ? '🪙' : (isLots ? '📈' : '🏦')}</span>`;
+
     if (isCripto) {
       const reval = accCryptoRevaluation(acc);
       const revalPct = accCryptoRevaluationPct(acc);
-      deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
-      deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
-      deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
+      const deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       const groups = accAssetGroups(acc);
-      subtitle = groups.length
-        ? groups.map(g => `<p class="text-xs text-inkmuted truncate">${fmtQty(groupQty(g.lots))} ${g.symbol} · promedio ${fmtMoney(groupAvgPrice(g.lots), acc.currency)}</p>`).join('')
-        : `<p class="text-xs text-inkmuted truncate">Sin compras</p>`;
-    } else if (isLots) {
+      const rowsHTML = groups.length
+        ? groups.map((g, i) => cryptoAssetRowHTML(g, acc, i === groups.length - 1)).join('')
+        : `<p class="text-xs text-inkmuted italic py-2">Todavía no has añadido ninguna compra.</p>`;
+      return `<div class="card p-6">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-7 h-7 rounded-full bg-surfacealt overflow-hidden shrink-0 flex items-center justify-center">${iconHTML}</span>
+            <p class="text-sm font-semibold text-ink truncate">${acc.name}</p>
+          </div>
+          <div class="text-right shrink-0">
+            <p class="money font-display text-xl text-ink" style="font-weight:500;">${fmtMoney(acc.balance, acc.currency)}</p>
+            <p class="money text-xs font-mono ${deltaColor}">${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p>
+          </div>
+        </div>
+        <div class="mb-2">${rowsHTML}</div>
+        <div class="flex items-center justify-between pt-3 border-t border-border">
+          <button data-refreshprices="${acc.id}" class="btn-outline rounded-full px-3 py-1.5 text-xs font-medium flex items-center gap-1.5">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l4 4-4 4M3 12v-2a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 12v2a4 4 0 0 1-4 4H3"/></svg>
+            <span>Actualizar precios</span>
+          </button>
+          <button data-details="${acc.id}" class="text-xs text-inkmuted hover:text-ink font-medium">Detalles →</button>
+        </div>
+      </div>`;
+    }
+
+    let deltaLabel, deltaColor, subtitle;
+    if (isLots) {
       const reval = accRevaluation(acc);
       const revalPct = accRevaluationPct(acc);
       deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
-      deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
       deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
       subtitle = `<p class="text-xs text-inkmuted truncate">${fmtQty(accTotalShares(acc))} acc. · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}</p>`;
     } else {
       const delta = accountDelta(acc);
       deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
-      deltaArrow = delta > 0 ? '↗' : (delta < 0 ? '↘' : '↗');
+      const deltaArrow = delta > 0 ? '↗' : (delta < 0 ? '↘' : '↗');
       deltaLabel = `${fmtEUR(Math.abs(delta))} vs mes anterior ${deltaArrow}`;
       subtitle = `<p class="text-xs text-inkmuted truncate">${acc.bank || ACCOUNT_TYPES[acc.type] || 'Otros'}</p>`;
     }
-    const iconHTML = acc.logo
-      ? `<img src="${logoImgURL(acc.logo)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🏦'">`
-      : `<span class="text-sm">${isCripto ? '🪙' : (isLots ? '📈' : '🏦')}</span>`;
     return `<div class="card p-6">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5 min-w-0">
@@ -889,6 +952,7 @@ function renderAccounts() {
     </button>`;
   grid.querySelectorAll('[data-updatebal]').forEach(b => b.addEventListener('click', () => openAccountModal(ACCOUNTS.find(a => a.id === parseInt(b.dataset.updatebal, 10)))));
   grid.querySelectorAll('[data-details]').forEach(b => b.addEventListener('click', () => openAccountModal(ACCOUNTS.find(a => a.id === parseInt(b.dataset.details, 10)))));
+  grid.querySelectorAll('[data-refreshprices]').forEach(b => b.addEventListener('click', () => refreshCryptoPrices(parseInt(b.dataset.refreshprices, 10))));
   document.getElementById('btnAddAccountCard').addEventListener('click', () => openAccountModal(null));
 }
 function openAccountModal(existing) {
