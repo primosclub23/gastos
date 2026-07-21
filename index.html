@@ -126,6 +126,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
         Cuentas
       </a>
+      <a href="#alertas-section" data-nav="alertas" class="nav-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Alertas
+      </a>
     </nav>
 
     <div class="relative mt-auto pt-3 border-t border-border">
@@ -178,12 +182,23 @@
       <h1 class="font-display italic text-4xl sm:text-5xl text-ink" style="font-weight:450;">Financial <span style="color:#D97757;">Dashboard</span></h1>
       <p class="text-inkmuted mt-1.5 text-sm">Ingresos, gastos y ahorro — a tu manera. · <span id="syncStatus" class="font-mono text-xs">⚙ Sin configurar</span></p>
     </div>
-    <div class="flex gap-2 flex-wrap justify-end">
+    <div class="flex gap-2 flex-wrap justify-end items-start">
       <input id="fileInput" type="file" accept=".csv,.txt" class="hidden">
       <input id="jsonFileInput" type="file" accept=".json" class="hidden">
+      <div class="relative">
+        <button id="btnAlerts" type="button" class="btn-outline rounded-full w-10 h-10 flex items-center justify-center relative" title="Alertas">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span id="alertBadge" class="hidden absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-bad text-white text-[10px] font-semibold flex items-center justify-center"></span>
+        </button>
+        <div id="alertsDropdown" class="hidden absolute right-0 mt-2 w-72 card p-2 z-50"></div>
+      </div>
       <button id="btnAddTx" class="btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
         Añadir movimiento
+      </button>
+      <button id="btnAddAccountHeader" class="hidden btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Crear Cuenta
       </button>
     </div>
   </header>
@@ -245,17 +260,26 @@
 
   <!-- ============ CUENTAS (próximamente) ============ -->
   <section id="cuentas-section" class="hidden mb-8">
-    <div class="flex items-center justify-between mb-4">
-      <div>
-        <h2 class="font-display text-lg text-ink" style="font-weight:560;">Cuentas</h2>
-        <p class="text-xs text-inkmuted mt-1">Ver y administrar tus cuentas — saldo manual</p>
-      </div>
-      <button id="btnAddAccount" class="btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-        Crear Cuenta
-      </button>
+    <div class="mb-4">
+      <h2 class="font-display text-lg text-ink" style="font-weight:560;">Cuentas</h2>
+      <p class="text-xs text-inkmuted mt-1">Ver y administrar tus cuentas — saldo manual</p>
     </div>
     <div id="accountsGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-5"></div>
+  </section>
+
+  <!-- ============ ALERTAS ============ -->
+  <section id="alertas-section" class="hidden mb-8">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="font-display text-lg text-ink" style="font-weight:560;">Alertas</h2>
+        <p class="text-xs text-inkmuted mt-1">Recordatorios que se repiten cada mes en el día que elijas</p>
+      </div>
+      <button id="btnAddAlert" class="btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Nueva alerta
+      </button>
+    </div>
+    <div id="alertsGrid" class="space-y-3"></div>
   </section>
 
   <!-- ============ TRANSACTIONS TABLE ============ -->
@@ -400,6 +424,14 @@ function accRevaluationPct(acc) { const cost = accTotalCost(acc); return cost > 
 let TRANSACTIONS = [];  // sin datos de ejemplo — listo para tus movimientos reales
 let ACCOUNTS = [];      // cuentas manuales (plan de pensiones, inversiones, etc.)
 let RECURRING = [];     // añade aquí tus fijos (alquiler, nómina, suscripciones…) desde "Añadir movimiento" o "Recurrentes"
+let ALERTS = [];        // recordatorios mensuales configurables (ej. "apuntar compra de acciones el día 15")
+let ALERT_SEQ = 0;
+function mkAlert(title, dayOfMonth) { return { id: ++ALERT_SEQ, title, dayOfMonth, active: true }; }
+function getPendingAlerts() {
+  const day = parseInt(TODAY.split('-')[2], 10);
+  const mKey = monthKey(TODAY);
+  return ALERTS.filter(a => a.active && day >= a.dayOfMonth && !state.dismissedAlerts.has(`${a.id}-${mKey}`));
+}
 
 function generateSeriesTx(s) {
   const out = [];
@@ -435,7 +467,7 @@ function getAllYearsSorted() { const s = new Set(TRANSACTIONS.map(t => yearKey(t
 function getMonthsInYear(year) { return getAllMonthsSorted().filter(m => m.startsWith(year)); }
 
 // state.filter: {type:'all'} | {type:'group', value:'fijo'|'variable'} | {type:'category', value:catKey}
-const state = { viewMode: 'month', year: yearKey(TODAY), month: monthKey(TODAY), filter: { type: 'all', value: null }, query: '', dismissedReminders: new Set(), popupSeenIds: new Set(), txFilter: { year: 'all', month: 'all', cat: 'all' } };
+const state = { viewMode: 'month', year: yearKey(TODAY), month: monthKey(TODAY), filter: { type: 'all', value: null }, query: '', dismissedReminders: new Set(), popupSeenIds: new Set(), txFilter: { year: 'all', month: 'all', cat: 'all' }, dismissedAlerts: new Set() };
 let doughnutChart, barChart;
 
 function setFilter(type, value) { state.filter = { type, value }; syncFilterBar(); render(); }
@@ -1052,7 +1084,115 @@ function openAccountModal(existing) {
   }
   paint(); backdrop.classList.remove('hidden');
 }
-document.getElementById('btnAddAccount').addEventListener('click', () => openAccountModal(null));
+document.getElementById('btnAddAccountHeader').addEventListener('click', () => openAccountModal(null));
+
+/* =========================================================================
+   11c) ALERTAS (recordatorios mensuales configurables)
+   ========================================================================= */
+function ordinalDay(d) { return `día ${d}`; }
+function renderAlerts() {
+  const grid = document.getElementById('alertsGrid');
+  grid.innerHTML = ALERTS.length ? ALERTS.slice().sort((a, b) => a.dayOfMonth - b.dayOfMonth).map(a => `
+    <div class="card p-4 flex items-center justify-between ${a.active ? '' : 'opacity-50'}">
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="w-9 h-9 rounded-full bg-surfacealt flex items-center justify-center text-base shrink-0">🔔</span>
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-ink truncate">${a.title}</p>
+          <p class="text-xs text-inkmuted">Cada ${ordinalDay(a.dayOfMonth)} del mes${a.active ? '' : ' · desactivada'}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
+        <button data-togglealert="${a.id}" class="btn-outline rounded-full px-3 py-1.5 text-xs font-medium">${a.active ? 'Desactivar' : 'Activar'}</button>
+        <button data-editalert="${a.id}" class="icon-btn text-inkmuted" title="Editar">✎</button>
+        <button data-delalert="${a.id}" class="icon-btn text-inkmuted hover:text-bad" title="Eliminar">✕</button>
+      </div>
+    </div>`).join('') : `<div class="card p-10 text-center"><p class="text-3xl mb-2">🔔</p><p class="text-sm text-ink font-medium">Todavía no tienes alertas</p><p class="text-xs text-inkmuted mt-1">Crea una para que te recuerde algo cada mes, ej. "Apuntar acciones de Repsol" el día 15.</p></div>`;
+  grid.querySelectorAll('[data-togglealert]').forEach(b => b.addEventListener('click', () => {
+    const a = ALERTS.find(x => x.id === parseInt(b.dataset.togglealert, 10));
+    if (a) { a.active = !a.active; renderAlerts(); scheduleGhSave(); }
+  }));
+  grid.querySelectorAll('[data-editalert]').forEach(b => b.addEventListener('click', () => openAlertModal(ALERTS.find(x => x.id === parseInt(b.dataset.editalert, 10)))));
+  grid.querySelectorAll('[data-delalert]').forEach(b => b.addEventListener('click', () => {
+    const a = ALERTS.find(x => x.id === parseInt(b.dataset.delalert, 10));
+    if (!a) return;
+    if (!confirm(`¿Eliminar la alerta "${a.title}"?`)) return;
+    ALERTS = ALERTS.filter(x => x.id !== a.id);
+    renderAlerts(); scheduleGhSave();
+  }));
+  renderAlertBell();
+}
+function renderAlertBell() {
+  const pending = getPendingAlerts();
+  const badge = document.getElementById('alertBadge');
+  badge.textContent = pending.length;
+  badge.classList.toggle('hidden', pending.length === 0);
+  const dd = document.getElementById('alertsDropdown');
+  dd.innerHTML = pending.length ? `
+    <div class="max-h-72 overflow-y-auto -mr-1 pr-1">${pending.map(a => `
+      <div class="flex items-start justify-between gap-2 p-2 rounded-lg hover:bg-surfacealt">
+        <div class="min-w-0"><p class="text-sm text-ink">${a.title}</p><p class="text-xs text-inkmuted">Desde el ${ordinalDay(a.dayOfMonth)}</p></div>
+        <button data-dismissalert="${a.id}" class="text-xs text-inkmuted hover:text-ink underline shrink-0 whitespace-nowrap">Hecho</button>
+      </div>`).join('')}</div>
+    <div class="border-t border-border mt-1.5 pt-1.5"><a href="#alertas-section" data-nav="alertas" class="nav-item">Gestionar alertas</a></div>
+  ` : `<div class="p-4 text-center"><p class="text-xs text-inkmuted">No tienes alertas pendientes.</p></div>`;
+  dd.querySelectorAll('[data-dismissalert]').forEach(b => b.addEventListener('click', () => {
+    const id = parseInt(b.dataset.dismissalert, 10);
+    state.dismissedAlerts.add(`${id}-${monthKey(TODAY)}`);
+    renderAlertBell();
+  }));
+  dd.querySelectorAll('.nav-item[data-nav]').forEach(el => el.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('alertsDropdown').classList.add('hidden');
+    document.querySelectorAll('.nav-item[data-nav]').forEach(n => n.classList.remove('active'));
+    document.querySelector('a.nav-item[data-nav="alertas"]').classList.add('active');
+    showView('alertas');
+  }));
+}
+function openAlertModal(existing) {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let titleVal = existing ? existing.title : '';
+  let dayVal = existing ? String(existing.dayOfMonth) : '15';
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">${existing ? 'Editar alerta' : 'Nueva alerta'}</h3>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">¿Qué quieres que te recuerde?</label>
+      <input id="fTitle" type="text" value="${titleVal}" placeholder="ej. Apuntar acciones de Repsol" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Día del mes</label>
+      <input id="fDay" type="number" min="1" max="31" value="${dayVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+      <div class="flex gap-2">
+        ${existing ? `<button id="mDelete" class="btn-outline flex-1 rounded-full py-2.5 text-sm font-medium" style="color:#B15D4A; border-color:#B15D4A;">Eliminar</button>` : ''}
+        <button id="mSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium">${existing ? 'Guardar cambios' : 'Crear alerta'}</button>
+      </div>`;
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('fTitle').addEventListener('input', e => titleVal = e.target.value);
+    document.getElementById('fDay').addEventListener('input', e => dayVal = e.target.value);
+    if (existing) document.getElementById('mDelete').addEventListener('click', () => {
+      if (!confirm(`¿Eliminar la alerta "${existing.title}"?`)) return;
+      ALERTS = ALERTS.filter(a => a.id !== existing.id);
+      closeModal(); renderAlerts(); scheduleGhSave();
+      showToast('Alerta eliminada.');
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const title = document.getElementById('fTitle').value.trim();
+      const day = parseInt(document.getElementById('fDay').value, 10);
+      if (!title || isNaN(day) || day < 1 || day > 31) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      if (existing) {
+        existing.title = title; existing.dayOfMonth = day;
+        showToast('Alerta actualizada.');
+      } else {
+        ALERTS.push(mkAlert(title, day));
+        showToast('Alerta creada.');
+      }
+      closeModal(); renderAlerts(); scheduleGhSave();
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+document.getElementById('btnAddAlert').addEventListener('click', () => openAlertModal(null));
+const alertsDropdown = document.getElementById('alertsDropdown');
+document.getElementById('btnAlerts').addEventListener('click', (e) => { e.stopPropagation(); alertsDropdown.classList.toggle('hidden'); });
+document.addEventListener('click', (e) => { if (!alertsDropdown.classList.contains('hidden') && !alertsDropdown.contains(e.target) && e.target.id !== 'btnAlerts') alertsDropdown.classList.add('hidden'); });
 
 /* =========================================================================
    12) MODAL — create / edit category
@@ -1615,7 +1755,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
    16) EXPORTAR / RESTAURAR DATOS (copia de seguridad completa en JSON)
    ========================================================================= */
 function exportData() {
-  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ };
+  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1635,10 +1775,12 @@ function tryRestoreFromJSON(rawText) {
     TRANSACTIONS = data.transactions.map(t => ({ ...t }));
     RECURRING = data.recurring.map(s => ({ ...s }));
     ACCOUNTS = Array.isArray(data.accounts) ? data.accounts.map(a => ({ ...a })) : [];
+    ALERTS = Array.isArray(data.alerts) ? data.alerts.map(a => ({ ...a })) : [];
     TX_SEQ = data.txSeq || Math.max(0, ...TRANSACTIONS.map(t => t.id || 0), 0);
     REC_SEQ = data.recSeq || Math.max(0, ...RECURRING.map(s => s.id || 0), 0);
     ORDER_SEQ = data.orderSeq || Math.max(100, ...Object.values(CATEGORIES).map(c => c.order || 0));
     ACC_SEQ = data.accSeq || Math.max(0, ...ACCOUNTS.map(a => a.id || 0), 0);
+    ALERT_SEQ = data.alertSeq || Math.max(0, ...ALERTS.map(a => a.id || 0), 0);
     regenerateAllRecurring();
     setFilter('all', null);
     buildFilterBar(); buildPeriodTabs(); syncControls(); render();
@@ -1686,7 +1828,7 @@ function showToast(msg) { const t = document.getElementById('toast'); t.textCont
 /* =========================================================================
    17) MASTER RENDER + INIT
    ========================================================================= */
-function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); scheduleGhSave(); }
+function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); renderAlerts(); scheduleGhSave(); }
 
 document.getElementById('searchInput').addEventListener('input', (e) => handleSearchInput(e.target.value));
 document.getElementById('txFilterYear').addEventListener('change', e => { state.txFilter.year = e.target.value; renderTable(); });
@@ -1698,9 +1840,11 @@ document.getElementById('btnAddTx').addEventListener('click', () => openTransact
 /* =========================================================================
    16b) SIDEBAR — navegación por vistas, menú de perfil, modo oscuro, modo privado
    ========================================================================= */
-const VIEW_SECTIONS = { panel: 'panel-section', gastos: 'gastos-section', cuentas: 'cuentas-section', transacciones: 'transacciones-section' };
+const VIEW_SECTIONS = { panel: 'panel-section', gastos: 'gastos-section', cuentas: 'cuentas-section', transacciones: 'transacciones-section', alertas: 'alertas-section' };
 function showView(name) {
   Object.entries(VIEW_SECTIONS).forEach(([key, id]) => document.getElementById(id).classList.toggle('hidden', key !== name));
+  document.getElementById('btnAddTx').classList.toggle('hidden', name === 'cuentas');
+  document.getElementById('btnAddAccountHeader').classList.toggle('hidden', name !== 'cuentas');
   window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.nav-item[data-nav]').forEach(el => el.addEventListener('click', (e) => {
@@ -1784,10 +1928,12 @@ async function ghLoad() {
     if (data && Array.isArray(data.transactions)) TRANSACTIONS = data.transactions.map(t => ({ ...t }));
     if (data && Array.isArray(data.recurring)) RECURRING = data.recurring.map(s => ({ ...s }));
     if (data && Array.isArray(data.accounts)) ACCOUNTS = data.accounts.map(a => ({ ...a }));
+    if (data && Array.isArray(data.alerts)) ALERTS = data.alerts.map(a => ({ ...a }));
     TX_SEQ = data.txSeq || TX_SEQ;
     REC_SEQ = data.recSeq || REC_SEQ;
     ORDER_SEQ = data.orderSeq || ORDER_SEQ;
     ACC_SEQ = data.accSeq || ACC_SEQ;
+    ALERT_SEQ = data.alertSeq || ALERT_SEQ;
     setSyncStatus('ok');
   } catch (e) {
     setSyncStatus('error');
@@ -1799,7 +1945,7 @@ async function ghSave() {
   const cfg = getGhConfig();
   if (!cfg || !cfg.token || !cfg.owner || !cfg.repo) return;
   setSyncStatus('guardando');
-  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ };
+  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ };
   const body = { message: 'Actualización automática · ' + new Date().toISOString(), content: utf8ToB64(JSON.stringify(payload, null, 2)), branch: cfg.branch || 'main' };
   if (ghFileSha) body.sha = ghFileSha;
   try {
