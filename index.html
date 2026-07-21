@@ -351,6 +351,7 @@ function fmtMoney(n, currency) {
   if (currency === 'USD') { const s = n < 0 ? '-' : ''; return s + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   return fmtEUR(n);
 }
+function fmtQty(n) { return (n || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 }); }
 function pad2(n) { return String(n).padStart(2, '0'); }
 function monthKey(d) { return d.slice(0, 7); }
 function yearKey(d) { return d.slice(0, 4); }
@@ -836,14 +837,14 @@ function renderAccounts() {
       deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
       deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
-      subtitle = accAssetGroups(acc).map(g => `${groupQty(g.lots)} ${g.symbol}`).join(' · ') || 'Sin compras';
+      subtitle = accAssetGroups(acc).map(g => `${fmtQty(groupQty(g.lots))} ${g.symbol}`).join(' · ') || 'Sin compras';
     } else if (isLots) {
       const reval = accRevaluation(acc);
       const revalPct = accRevaluationPct(acc);
       deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
       deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
-      subtitle = `${accTotalShares(acc)} acc. · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}`;
+      subtitle = `${fmtQty(accTotalShares(acc))} acc. · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}`;
     } else {
       const delta = accountDelta(acc);
       deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
@@ -925,7 +926,7 @@ function openAccountModal(existing) {
     const rows = lotsVal.map(l => `
       <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0 ${l._id === editingLotId ? 'opacity-50' : ''}">
         <span class="text-inkmuted font-mono">${new Date(l.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-        <span class="text-ink">${l.qty} acciones × ${fmtMoney(l.price, currencyVal)}</span>
+        <span class="text-ink">${fmtQty(l.qty)} acciones × ${fmtMoney(l.price, currencyVal)}</span>
         <span class="flex items-center gap-2 shrink-0">
           <button data-editlot="${l._id}" class="text-inkmuted hover:text-ink" title="Editar compra">✎</button>
           <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad" title="Eliminar compra">✕</button>
@@ -951,7 +952,7 @@ function openAccountModal(existing) {
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Precio actual por acción (${currencyVal === 'USD' ? '$' : '€'})</label>
       <input id="fCurrentPrice" type="number" step="0.0001" min="0" value="${currentPriceVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
       <div class="card p-3 mb-5 grid grid-cols-2 gap-2 text-xs">
-        <div><p class="text-inkmuted">Nº acciones</p><p class="text-ink font-mono">${totalShares}</p></div>
+        <div><p class="text-inkmuted">Nº acciones</p><p class="text-ink font-mono">${fmtQty(totalShares)}</p></div>
         <div><p class="text-inkmuted">Precio promedio</p><p class="text-ink font-mono">${fmtMoney(avgPrice, currencyVal)}</p></div>
         <div><p class="text-inkmuted">Valor actual</p><p class="text-ink font-mono">${fmtMoney(currentValue, currencyVal)}</p></div>
         <div><p class="text-inkmuted">Revalorización</p><p class="font-mono ${reval >= 0 ? 'text-good' : 'text-bad'}">${reval >= 0 ? '+' : ''}${fmtMoney(reval, currencyVal)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p></div>
@@ -965,7 +966,7 @@ function openAccountModal(existing) {
           <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surfacealt text-inkmuted">${l.symbol || '?'}</span>
           <span class="text-inkmuted font-mono">${new Date(l.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
         </span>
-        <span class="text-ink">${l.qty} × ${fmtMoney(l.price, currencyVal)}</span>
+        <span class="text-ink">${fmtQty(l.qty)} × ${fmtMoney(l.price, currencyVal)}</span>
         <span class="flex items-center gap-2 shrink-0">
           <button data-editlot="${l._id}" class="text-inkmuted hover:text-ink" title="Editar compra">✎</button>
           <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad" title="Eliminar compra">✕</button>
@@ -991,7 +992,7 @@ function openAccountModal(existing) {
         <div class="card p-3 mb-2">
           <div class="flex items-center justify-between mb-2">
             <span class="font-mono text-xs font-semibold text-ink">${g.symbol}</span>
-            <span class="text-xs text-inkmuted">${qty} uds. · promedio ${fmtMoney(avg, currencyVal)}</span>
+            <span class="text-xs text-inkmuted">${fmtQty(qty)} uds. · promedio ${fmtMoney(avg, currencyVal)}</span>
           </div>
           <div class="flex items-center gap-2">
             <input data-curprice="${g.symbol}" type="number" step="0.0001" min="0" value="${curPriceStr}" placeholder="Precio actual" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
