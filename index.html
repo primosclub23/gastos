@@ -421,6 +421,29 @@ function accCurrentValue(acc) { return accTotalShares(acc) * (acc.currentPrice |
 function accRevaluation(acc) { return accCurrentValue(acc) - accTotalCost(acc); }
 function accRevaluationPct(acc) { const cost = accTotalCost(acc); return cost > 0 ? (accRevaluation(acc) / cost) * 100 : 0; }
 
+// --- Cripto: una cuenta puede tener varios activos distintos (BTC, XRP, ...) mezclados en sus compras ---
+function groupQty(lots) { const sum = lots.reduce((s, l) => s + l.qty, 0); return Math.round(sum * 1e8) / 1e8; }
+function groupCost(lots) { return lots.reduce((s, l) => s + l.price * l.qty, 0); }
+function groupAvgPrice(lots) { const q = groupQty(lots); return q > 0 ? groupCost(lots) / q : 0; }
+function accAssetGroups(acc) {
+  const map = {};
+  (acc.lots || []).forEach(l => {
+    const sym = l.symbol || acc.symbol || '?';
+    const cgId = l.cgId || acc.cgId || null;
+    if (!map[sym]) map[sym] = { symbol: sym, cgId, lots: [] };
+    map[sym].lots.push(l);
+  });
+  return Object.values(map);
+}
+function accCurrentPriceFor(acc, symbol) {
+  if (acc.currentPrices && acc.currentPrices[symbol] != null) return acc.currentPrices[symbol];
+  if (acc.symbol === symbol && acc.currentPrice != null) return acc.currentPrice; // compat cuentas antiguas de un solo activo
+  return 0;
+}
+function accCryptoCurrentValue(acc) { return accAssetGroups(acc).reduce((sum, g) => sum + groupQty(g.lots) * accCurrentPriceFor(acc, g.symbol), 0); }
+function accCryptoRevaluation(acc) { return accCryptoCurrentValue(acc) - accTotalCost(acc); }
+function accCryptoRevaluationPct(acc) { const cost = accTotalCost(acc); return cost > 0 ? (accCryptoRevaluation(acc) / cost) * 100 : 0; }
+
 let TRANSACTIONS = [];  // sin datos de ejemplo — listo para tus movimientos reales
 let ACCOUNTS = [];      // cuentas manuales (plan de pensiones, inversiones, etc.)
 let RECURRING = [];     // añade aquí tus fijos (alquiler, nómina, suscripciones…) desde "Añadir movimiento" o "Recurrentes"
@@ -807,14 +830,20 @@ function renderAccounts() {
     const isLots = LOT_ACCOUNT_TYPES.includes(acc.type);
     const isCripto = acc.type === 'cripto';
     let deltaLabel, deltaColor, deltaArrow, subtitle;
-    if (isLots) {
+    if (isCripto) {
+      const reval = accCryptoRevaluation(acc);
+      const revalPct = accCryptoRevaluationPct(acc);
+      deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
+      deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
+      deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
+      subtitle = accAssetGroups(acc).map(g => `${groupQty(g.lots)} ${g.symbol}`).join(' · ') || 'Sin compras';
+    } else if (isLots) {
       const reval = accRevaluation(acc);
       const revalPct = accRevaluationPct(acc);
       deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
       deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
-      const unitLabel = isCripto ? (acc.symbol || '') : 'acc.';
-      subtitle = `${accTotalShares(acc)} ${unitLabel} · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}`;
+      subtitle = `${accTotalShares(acc)} acc. · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}`;
     } else {
       const delta = accountDelta(acc);
       deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
@@ -867,19 +896,25 @@ function openAccountModal(existing) {
   let logoTouched = !!logoVal;
   let balanceVal = existing ? String(existing.balance) : '';
   let lotSeq = 0;
-  let lotsVal = existing && existing.lots ? existing.lots.map(l => ({ ...l, _id: ++lotSeq })) : [];
+  let lotsVal = existing && existing.lots ? existing.lots.map(l => {
+    const lot = { ...l, _id: ++lotSeq };
+    if (existing.type === 'cripto' && !lot.symbol && existing.symbol) { lot.symbol = existing.symbol; lot.cgId = existing.cgId || null; }
+    return lot;
+  }) : [];
   let currentPriceVal = existing && existing.currentPrice != null ? String(existing.currentPrice) : '';
+  let currentPricesVal = {};
+  if (existing && existing.type === 'cripto') {
+    if (existing.currentPrices) Object.keys(existing.currentPrices).forEach(k => currentPricesVal[k] = String(existing.currentPrices[k]));
+    else if (existing.symbol && existing.currentPrice != null) currentPricesVal[existing.symbol] = String(existing.currentPrice);
+  }
   let currencyVal = existing && existing.currency ? existing.currency : 'EUR';
-  const isKnownCoin = existing && existing.symbol && CRYPTO_SYMBOLS[existing.symbol] === existing.cgId;
-  let symbolVal = existing && existing.symbol ? (isKnownCoin ? existing.symbol : 'otra') : 'BTC';
-  let customLabelVal = existing && !isKnownCoin ? (existing.symbol || '') : '';
-  let customIdVal = existing && !isKnownCoin ? (existing.cgId || '') : '';
+  let symbolVal = 'BTC';
+  let customLabelVal = '';
+  let customIdVal = '';
   let editingLotId = null;
   let lotDraftDate = TODAY, lotDraftPrice = '', lotDraftQty = '';
 
-  function lotsBlockHTML(isCripto) {
-    const unit = isCripto ? 'unidad' : 'acción';
-    const unitPlural = isCripto ? 'unidades' : 'acciones';
+  function stockLotsHTML() {
     const totalShares = accTotalShares({ lots: lotsVal });
     const avgPrice = accAvgPrice({ lots: lotsVal });
     const totalCost = accTotalCost({ lots: lotsVal });
@@ -890,7 +925,7 @@ function openAccountModal(existing) {
     const rows = lotsVal.map(l => `
       <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0 ${l._id === editingLotId ? 'opacity-50' : ''}">
         <span class="text-inkmuted font-mono">${new Date(l.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-        <span class="text-ink">${l.qty} ${unitPlural} × ${fmtMoney(l.price, currencyVal)}</span>
+        <span class="text-ink">${l.qty} acciones × ${fmtMoney(l.price, currencyVal)}</span>
         <span class="flex items-center gap-2 shrink-0">
           <button data-editlot="${l._id}" class="text-inkmuted hover:text-ink" title="Editar compra">✎</button>
           <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad" title="Eliminar compra">✕</button>
@@ -902,43 +937,106 @@ function openAccountModal(existing) {
         <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
         <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
       </div>
-      ${isCripto ? `
-        <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Activo</label>
-        <select id="fSymbol" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
-          ${Object.keys(CRYPTO_SYMBOLS).map(s => `<option value="${s}" ${s === symbolVal ? 'selected' : ''}>${s}</option>`).join('')}
-          <option value="otra" ${symbolVal === 'otra' ? 'selected' : ''}>Otra criptomoneda…</option>
-        </select>
-        ${symbolVal === 'otra' ? `
-          <div class="grid grid-cols-2 gap-2 mb-1">
-            <input id="fCustomLabel" type="text" value="${customLabelVal}" placeholder="Símbolo (ej. ARMY)" class="focus-ring rounded-lg border border-border px-3 py-2 text-sm" />
-            <input id="fCustomId" type="text" value="${customIdVal}" placeholder="id de CoinGecko (ej. army-3)" class="focus-ring rounded-lg border border-border px-3 py-2 text-sm" />
-          </div>
-          <p class="text-xs text-inkmuted mb-4">El id es lo que aparece al final de la URL en CoinGecko: coingecko.com/es/monedas/<strong>army-3</strong></p>
-        ` : ''}
-      ` : ''}
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (fecha · precio · nº ${unitPlural})</label>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (fecha · precio · nº acciones)</label>
       <div class="mt-1.5 mb-2 max-h-32 overflow-y-auto -mr-2 pr-2">${rows}</div>
       <div class="grid grid-cols-3 gap-2 mb-2">
         <input id="fLotDate" type="date" value="${lotDraftDate}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
         <input id="fLotPrice" type="number" step="0.0001" min="0" value="${lotDraftPrice}" placeholder="Precio ${currencyVal === 'USD' ? '$' : '€'}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-        <input id="fLotQty" type="number" step="0.0001" min="0" value="${lotDraftQty}" placeholder="Nº ${unitPlural}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotQty" type="number" step="0.0001" min="0" value="${lotDraftQty}" placeholder="Nº acciones" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
       </div>
       <div class="flex gap-2 mb-4">
         <button id="fAddLot" type="button" class="btn-outline flex-1 rounded-full py-2 text-xs font-medium">${editingLotId ? 'Guardar cambios en la compra' : '+ Añadir compra'}</button>
         ${editingLotId ? `<button id="fCancelEditLot" type="button" class="text-xs text-inkmuted hover:text-ink underline shrink-0 px-2">Cancelar</button>` : ''}
       </div>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Precio actual por ${unit} (${currencyVal === 'USD' ? '$' : '€'})</label>
-      <div class="flex items-center gap-2 mt-1.5 mb-4">
-        <input id="fCurrentPrice" type="number" step="0.0001" min="0" value="${currentPriceVal}" placeholder="0.00" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
-        ${isCripto ? `<button id="fFetchPrice" type="button" title="Consultar precio actual" class="btn-outline rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap">🔄 Auto</button>` : ''}
-      </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Precio actual por acción (${currencyVal === 'USD' ? '$' : '€'})</label>
+      <input id="fCurrentPrice" type="number" step="0.0001" min="0" value="${currentPriceVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
       <div class="card p-3 mb-5 grid grid-cols-2 gap-2 text-xs">
-        <div><p class="text-inkmuted">Nº ${unitPlural}</p><p class="text-ink font-mono">${totalShares}</p></div>
+        <div><p class="text-inkmuted">Nº acciones</p><p class="text-ink font-mono">${totalShares}</p></div>
         <div><p class="text-inkmuted">Precio promedio</p><p class="text-ink font-mono">${fmtMoney(avgPrice, currencyVal)}</p></div>
         <div><p class="text-inkmuted">Valor actual</p><p class="text-ink font-mono">${fmtMoney(currentValue, currencyVal)}</p></div>
         <div><p class="text-inkmuted">Revalorización</p><p class="font-mono ${reval >= 0 ? 'text-good' : 'text-bad'}">${reval >= 0 ? '+' : ''}${fmtMoney(reval, currencyVal)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p></div>
       </div>`;
   }
+
+  function cryptoLotsHTML() {
+    const rows = lotsVal.map(l => `
+      <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0 ${l._id === editingLotId ? 'opacity-50' : ''}">
+        <span class="flex items-center gap-1.5 min-w-0 shrink-0">
+          <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surfacealt text-inkmuted">${l.symbol || '?'}</span>
+          <span class="text-inkmuted font-mono">${new Date(l.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+        </span>
+        <span class="text-ink">${l.qty} × ${fmtMoney(l.price, currencyVal)}</span>
+        <span class="flex items-center gap-2 shrink-0">
+          <button data-editlot="${l._id}" class="text-inkmuted hover:text-ink" title="Editar compra">✎</button>
+          <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad" title="Eliminar compra">✕</button>
+        </span>
+      </div>`).join('') || `<p class="text-xs text-inkmuted italic py-1.5">Todavía no has añadido ninguna compra.</p>`;
+
+    const groups = accAssetGroups({ lots: lotsVal });
+    const totalCost = accTotalCost({ lots: lotsVal });
+    const totalValue = groups.reduce((s, g) => s + groupQty(g.lots) * (parseFloat(currentPricesVal[g.symbol]) || 0), 0);
+    const totalReval = totalValue - totalCost;
+    const totalRevalPct = totalCost > 0 ? (totalReval / totalCost) * 100 : 0;
+
+    const perAssetHTML = groups.map(g => {
+      const qty = groupQty(g.lots);
+      const avg = groupAvgPrice(g.lots);
+      const cost = groupCost(g.lots);
+      const curPriceStr = currentPricesVal[g.symbol] != null ? currentPricesVal[g.symbol] : '';
+      const curPriceNum = parseFloat(curPriceStr) || 0;
+      const value = qty * curPriceNum;
+      const reval = value - cost;
+      const revalPct = cost > 0 ? (reval / cost) * 100 : 0;
+      return `
+        <div class="card p-3 mb-2">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-mono text-xs font-semibold text-ink">${g.symbol}</span>
+            <span class="text-xs text-inkmuted">${qty} uds. · promedio ${fmtMoney(avg, currencyVal)}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <input data-curprice="${g.symbol}" type="number" step="0.0001" min="0" value="${curPriceStr}" placeholder="Precio actual" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
+            ${g.cgId ? `<button data-fetchprice="${g.symbol}" data-cgid="${g.cgId}" type="button" class="btn-outline rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap">🔄 Auto</button>` : ''}
+          </div>
+          <p class="text-xs mt-1.5 ${reval >= 0 ? 'text-good' : 'text-bad'} font-mono">${fmtMoney(value, currencyVal)} · ${reval >= 0 ? '+' : ''}${fmtMoney(reval, currencyVal)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p>
+        </div>`;
+    }).join('');
+
+    return `
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
+      <div class="flex gap-2 mt-1.5 mb-4">
+        <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
+        <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
+      </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">${editingLotId ? 'Activo de esta compra' : 'Activo de la nueva compra'}</label>
+      <select id="fSymbol" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
+        ${Object.keys(CRYPTO_SYMBOLS).map(s => `<option value="${s}" ${s === symbolVal ? 'selected' : ''}>${s}</option>`).join('')}
+        <option value="otra" ${symbolVal === 'otra' ? 'selected' : ''}>Otra criptomoneda…</option>
+      </select>
+      ${symbolVal === 'otra' ? `
+        <div class="grid grid-cols-2 gap-2 mb-1">
+          <input id="fCustomLabel" type="text" value="${customLabelVal}" placeholder="Símbolo (ej. ARMY)" class="focus-ring rounded-lg border border-border px-3 py-2 text-sm" />
+          <input id="fCustomId" type="text" value="${customIdVal}" placeholder="id de CoinGecko (ej. army-3)" class="focus-ring rounded-lg border border-border px-3 py-2 text-sm" />
+        </div>
+        <p class="text-xs text-inkmuted mb-4">El id es lo que aparece al final de la URL en CoinGecko: coingecko.com/es/monedas/<strong>army-3</strong></p>
+      ` : ''}
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (activo · fecha · precio · nº unidades)</label>
+      <div class="mt-1.5 mb-2 max-h-32 overflow-y-auto -mr-2 pr-2">${rows}</div>
+      <div class="grid grid-cols-3 gap-2 mb-2">
+        <input id="fLotDate" type="date" value="${lotDraftDate}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotPrice" type="number" step="0.0001" min="0" value="${lotDraftPrice}" placeholder="Precio ${currencyVal === 'USD' ? '$' : '€'}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotQty" type="number" step="0.0001" min="0" value="${lotDraftQty}" placeholder="Nº unidades" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+      </div>
+      <div class="flex gap-2 mb-4">
+        <button id="fAddLot" type="button" class="btn-outline flex-1 rounded-full py-2 text-xs font-medium">${editingLotId ? 'Guardar cambios en la compra' : '+ Añadir compra'}</button>
+        ${editingLotId ? `<button id="fCancelEditLot" type="button" class="text-xs text-inkmuted hover:text-ink underline shrink-0 px-2">Cancelar</button>` : ''}
+      </div>
+      ${groups.length ? `<label class="text-xs uppercase tracking-wide text-inkmuted font-medium mb-1.5 block">Precio actual por activo</label>${perAssetHTML}` : ''}
+      <div class="card p-3 mb-5 grid grid-cols-2 gap-2 text-xs">
+        <div><p class="text-inkmuted">Valor total cartera</p><p class="text-ink font-mono">${fmtMoney(totalValue, currencyVal)}</p></div>
+        <div><p class="text-inkmuted">Revalorización total</p><p class="font-mono ${totalReval >= 0 ? 'text-good' : 'text-bad'}">${totalReval >= 0 ? '+' : ''}${fmtMoney(totalReval, currencyVal)} (${totalRevalPct >= 0 ? '+' : ''}${totalRevalPct.toFixed(1)}%)</p></div>
+      </div>`;
+  }
+  function lotsBlockHTML(isCripto) { return isCripto ? cryptoLotsHTML() : stockLotsHTML(); }
 
   function paint() {
     const isLots = LOT_ACCOUNT_TYPES.includes(typeVal);
@@ -976,6 +1074,8 @@ function openAccountModal(existing) {
     });
     if (isLots) {
       card.querySelectorAll('[data-currency]').forEach(b => b.addEventListener('click', () => { currencyVal = b.dataset.currency; paint(); }));
+    }
+    if (isLots && !isCripto) {
       document.getElementById('fCurrentPrice').addEventListener('input', e => { currentPriceVal = e.target.value; });
       document.getElementById('fAddLot').addEventListener('click', () => {
         const date = document.getElementById('fLotDate').value;
@@ -1011,28 +1111,72 @@ function openAccountModal(existing) {
         if (editingLotId === id) { editingLotId = null; lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = ''; }
         paint();
       }));
-      if (isCripto) {
-        document.getElementById('fSymbol').addEventListener('change', e => { symbolVal = e.target.value; paint(); });
-        const fCustomLabel = document.getElementById('fCustomLabel');
-        const fCustomId = document.getElementById('fCustomId');
-        if (fCustomLabel) fCustomLabel.addEventListener('input', e => customLabelVal = e.target.value);
-        if (fCustomId) fCustomId.addEventListener('input', e => customIdVal = e.target.value);
-        document.getElementById('fFetchPrice').addEventListener('click', async () => {
-          const btn = document.getElementById('fFetchPrice');
-          const cgId = symbolVal === 'otra' ? customIdVal.trim() : CRYPTO_SYMBOLS[symbolVal];
-          const label = symbolVal === 'otra' ? (customLabelVal.trim() || cgId) : symbolVal;
-          btn.disabled = true; btn.textContent = '…';
-          try {
-            const price = await fetchCryptoPriceById(cgId, currencyVal);
-            currentPriceVal = String(price);
-            paint();
-            showToast(`Precio de ${label} actualizado: ${fmtMoney(price, currencyVal)}`);
-          } catch (err) {
-            showToast('No se pudo consultar el precio automáticamente: ' + err.message);
-            btn.disabled = false; btn.textContent = '🔄 Auto';
-          }
-        });
-      }
+    } else if (isCripto) {
+      document.getElementById('fSymbol').addEventListener('change', e => { symbolVal = e.target.value; paint(); });
+      const fCustomLabel = document.getElementById('fCustomLabel');
+      const fCustomId = document.getElementById('fCustomId');
+      if (fCustomLabel) fCustomLabel.addEventListener('input', e => customLabelVal = e.target.value);
+      if (fCustomId) fCustomId.addEventListener('input', e => customIdVal = e.target.value);
+      document.getElementById('fAddLot').addEventListener('click', () => {
+        const date = document.getElementById('fLotDate').value;
+        const price = parseFloat(document.getElementById('fLotPrice').value);
+        const qty = parseFloat(document.getElementById('fLotQty').value);
+        if (!date || isNaN(price) || price < 0 || isNaN(qty) || qty <= 0) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
+        let symbol, cgId;
+        if (symbolVal === 'otra') {
+          cgId = customIdVal.trim();
+          if (!cgId) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
+          symbol = (customLabelVal.trim() || cgId).toUpperCase();
+        } else {
+          symbol = symbolVal; cgId = CRYPTO_SYMBOLS[symbolVal];
+        }
+        if (editingLotId) {
+          const lot = lotsVal.find(l => l._id === editingLotId);
+          if (lot) { lot.date = date; lot.price = price; lot.qty = qty; lot.symbol = symbol; lot.cgId = cgId; }
+          editingLotId = null;
+        } else {
+          lotsVal.push({ _id: ++lotSeq, date, price, qty, symbol, cgId });
+        }
+        if (!currentPricesVal[symbol]) currentPricesVal[symbol] = String(price);
+        lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = '';
+        paint();
+      });
+      const fCancelEditLot = document.getElementById('fCancelEditLot');
+      if (fCancelEditLot) fCancelEditLot.addEventListener('click', () => {
+        editingLotId = null; lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = '';
+        paint();
+      });
+      card.querySelectorAll('[data-editlot]').forEach(b => b.addEventListener('click', () => {
+        const id = parseInt(b.dataset.editlot, 10);
+        const lot = lotsVal.find(l => l._id === id);
+        if (!lot) return;
+        editingLotId = id; lotDraftDate = lot.date; lotDraftPrice = String(lot.price); lotDraftQty = String(lot.qty);
+        const known = CRYPTO_SYMBOLS[lot.symbol] === lot.cgId;
+        symbolVal = known ? lot.symbol : 'otra';
+        customLabelVal = known ? '' : (lot.symbol || '');
+        customIdVal = known ? '' : (lot.cgId || '');
+        paint();
+      }));
+      card.querySelectorAll('[data-dellot]').forEach(b => b.addEventListener('click', () => {
+        const id = parseInt(b.dataset.dellot, 10);
+        lotsVal = lotsVal.filter(l => l._id !== id);
+        if (editingLotId === id) { editingLotId = null; lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = ''; }
+        paint();
+      }));
+      card.querySelectorAll('[data-curprice]').forEach(inp => inp.addEventListener('input', e => { currentPricesVal[inp.dataset.curprice] = e.target.value; }));
+      card.querySelectorAll('[data-fetchprice]').forEach(btn => btn.addEventListener('click', async () => {
+        const symbol = btn.dataset.fetchprice, cgId = btn.dataset.cgid;
+        btn.disabled = true; const original = btn.textContent; btn.textContent = '…';
+        try {
+          const price = await fetchCryptoPriceById(cgId, currencyVal);
+          currentPricesVal[symbol] = String(price);
+          paint();
+          showToast(`Precio de ${symbol} actualizado: ${fmtMoney(price, currencyVal)}`);
+        } catch (err) {
+          showToast('No se pudo consultar el precio automáticamente: ' + err.message);
+          btn.disabled = false; btn.textContent = original;
+        }
+      }));
     } else {
       document.getElementById('fBalance').addEventListener('input', e => balanceVal = e.target.value);
     }
@@ -1048,22 +1192,22 @@ function openAccountModal(existing) {
       if (!name || !typeVal) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
       let balance;
       let extra = {};
-      if (isLots) {
+      if (isCripto) {
+        const currentPrices = {};
+        let invalid = false;
+        Object.keys(currentPricesVal).forEach(sym => {
+          const v = parseFloat(currentPricesVal[sym]);
+          if (isNaN(v) || v < 0) invalid = true;
+          currentPrices[sym] = isNaN(v) ? 0 : v;
+        });
+        if (invalid) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+        balance = accAssetGroups({ lots: lotsVal }).reduce((sum, g) => sum + groupQty(g.lots) * (currentPrices[g.symbol] || 0), 0);
+        extra = { lots: lotsVal.map(({ _id, ...l }) => l), currentPrices, currency: currencyVal, symbol: null, cgId: null, currentPrice: null };
+      } else if (isLots) {
         const currentPrice = parseFloat(currentPriceVal);
         if (isNaN(currentPrice) || currentPrice < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
         balance = accTotalShares({ lots: lotsVal }) * currentPrice;
         extra = { lots: lotsVal.map(({ _id, ...l }) => l), currentPrice, currency: currencyVal };
-        if (isCripto) {
-          if (symbolVal === 'otra') {
-            const cgId = customIdVal.trim();
-            if (!cgId) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
-            extra.symbol = customLabelVal.trim().toUpperCase() || cgId;
-            extra.cgId = cgId;
-          } else {
-            extra.symbol = symbolVal;
-            extra.cgId = CRYPTO_SYMBOLS[symbolVal];
-          }
-        }
       } else {
         balance = parseFloat(document.getElementById('fBalance').value);
         if (isNaN(balance)) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
