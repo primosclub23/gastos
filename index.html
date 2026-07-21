@@ -203,12 +203,37 @@
     </div>
   </header>
 
-  <!-- ============ PANEL (resumen global — pendiente de definir) ============ -->
+  <!-- ============ PANEL (Patrimonio Total) ============ -->
   <section id="panel-section" class="hidden mb-8">
-    <div class="card p-10 text-center">
+    <div id="pnlEmpty" class="hidden card p-10 text-center">
       <p class="text-3xl mb-2">📊</p>
-      <p class="text-sm text-ink font-medium">Próximamente</p>
-      <p class="text-xs text-inkmuted mt-1 max-w-sm mx-auto">Aquí verás un resumen global de todas tus cuentas junto con tu control de gastos, en un único vistazo. Lo iremos definiendo más adelante.</p>
+      <p class="text-sm text-ink font-medium">Todavía no tienes cuentas</p>
+      <p class="text-xs text-inkmuted mt-1 max-w-sm mx-auto">Crea tu primera cuenta en «Cuentas» para ver aquí la evolución de tu patrimonio.</p>
+    </div>
+    <div id="pnlContent">
+      <div class="card p-6 sm:p-8 mb-6">
+        <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-6">
+          <div>
+            <p class="text-xs uppercase tracking-widest text-inkmuted font-mono mb-1.5" id="pnlSubtitle">Patrimonio Total</p>
+            <p class="money font-display text-4xl sm:text-5xl text-ink" id="pnlHeroValue" style="font-weight:500;">0,00 €</p>
+            <p class="money text-sm font-mono mt-1.5" id="pnlHeroDelta"></p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div id="pnlViewToggle" class="flex bg-surfacealt rounded-full p-1"></div>
+            <div id="pnlYearTabs" class="flex bg-surfacealt rounded-full p-1"></div>
+            <select id="pnlAssetFilter" class="focus-ring rounded-full border border-border bg-surface px-3.5 py-1.5 text-sm font-medium text-ink"></select>
+          </div>
+        </div>
+        <div id="pnlMonthTabs" class="hidden flex-wrap bg-surfacealt rounded-full p-1 mb-5 w-fit"></div>
+        <div class="h-64 sm:h-80 relative">
+          <canvas id="patrimonioChart"></canvas>
+          <p id="pnlChartEmpty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-inkmuted italic">Sin datos registrados en este periodo.</p>
+        </div>
+        <p class="text-xs text-inkmuted mt-3" id="pnlCaption"></p>
+      </div>
+
+      <p class="text-sm font-semibold text-ink mb-3">Tus cuentas</p>
+      <div id="pnlAccountsGrid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"></div>
     </div>
   </section>
 
@@ -1263,6 +1288,216 @@ function openAccountModal(existing) {
 document.getElementById('btnAddAccountHeader').addEventListener('click', () => openAccountModal(null));
 
 /* =========================================================================
+   11b-bis) PANEL — Patrimonio Total (evolución de todas las cuentas)
+   ========================================================================= */
+let usdToEurRate = 0.92; // tipo aproximado de respaldo si no se puede consultar en vivo
+async function fetchUsdEurRate() {
+  try {
+    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR');
+    if (!res.ok) return;
+    const json = await res.json();
+    if (json && json.rates && json.rates.EUR) { usdToEurRate = json.rates.EUR; if (!document.getElementById('panel-section').classList.contains('hidden')) renderPanel(); }
+  } catch (e) { /* se mantiene el tipo aproximado */ }
+}
+function toEUR(amount, currency) { return currency === 'USD' ? amount * usdToEurRate : amount; }
+function accountColor(acc) { return PALETTE[ACCOUNTS.findIndex(a => a.id === acc.id) % PALETTE.length]; }
+function fmtCompact(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1000) return (n / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + 'k';
+  return n.toLocaleString('es-ES', { maximumFractionDigits: 0 });
+}
+function accBalanceAt(acc, date) {
+  const hist = acc.history || [];
+  let val = null;
+  for (const h of hist) { if (h.date <= date) val = h.balance; else break; }
+  return val;
+}
+function totalPatrimonioAt(date) { return ACCOUNTS.reduce((sum, acc) => sum + toEUR(accBalanceAt(acc, date) || 0, acc.currency || 'EUR'), 0); }
+function currentPatrimonioTotal() { return ACCOUNTS.reduce((sum, acc) => sum + toEUR(acc.balance, acc.currency || 'EUR'), 0); }
+function patrimonioAllDates() {
+  const s = new Set();
+  ACCOUNTS.forEach(acc => (acc.history || []).forEach(h => s.add(h.date)));
+  s.add(TODAY);
+  return [...s].sort();
+}
+function patrimonioYearsSorted() { return [...new Set(patrimonioAllDates().map(yearKey))].sort(); }
+function patrimonioMonthsInYear(year) {
+  const s = new Set(patrimonioAllDates().filter(d => yearKey(d) === year).map(monthKey));
+  if (year === yearKey(TODAY)) s.add(monthKey(TODAY));
+  return [...s].sort();
+}
+
+const panelState = { viewMode: 'year', year: null, month: null, asset: 'all' };
+let patrimonioChart;
+
+function patrimonioSeriesDates() {
+  if (panelState.viewMode === 'month') {
+    const s = new Set(patrimonioAllDates().filter(d => monthKey(d) === panelState.month));
+    s.add(panelState.month + '-01');
+    if (panelState.month === monthKey(TODAY)) s.add(TODAY);
+    return [...s].sort();
+  }
+  return patrimonioMonthsInYear(panelState.year).map(m => m === monthKey(TODAY) ? TODAY : `${m}-31`);
+}
+
+function buildPanelFilterBar() {
+  const vt = document.getElementById('pnlViewToggle');
+  vt.innerHTML = ['year', 'month'].map(v => `<button data-pnlview="${v}" class="pill-tab font-mono text-sm px-4 py-1.5 rounded-full text-inkmuted ${panelState.viewMode === v ? 'active text-ink' : ''}">${v === 'month' ? 'Mensual' : 'Anual'}</button>`).join('');
+  vt.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { panelState.viewMode = b.dataset.pnlview; renderPanel(); }));
+
+  const sel = document.getElementById('pnlAssetFilter');
+  sel.innerHTML = `<option value="all">Todos los activos</option>` + ACCOUNTS.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+  sel.value = ACCOUNTS.some(a => a.id === panelState.asset) ? panelState.asset : 'all';
+  panelState.asset = sel.value === 'all' ? 'all' : parseInt(sel.value, 10);
+  sel.onchange = () => { panelState.asset = sel.value === 'all' ? 'all' : parseInt(sel.value, 10); renderPanel(); };
+}
+function buildPanelPeriodTabs() {
+  const years = patrimonioYearsSorted();
+  if (!panelState.year || !years.includes(panelState.year)) panelState.year = years[years.length - 1];
+  const yEl = document.getElementById('pnlYearTabs');
+  yEl.innerHTML = years.map(y => `<button data-pnlyear="${y}" class="pill-tab font-mono text-sm px-4 py-1.5 rounded-full text-inkmuted ${panelState.year === y ? 'active text-ink' : ''}">${y}</button>`).join('');
+  yEl.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { panelState.year = b.dataset.pnlyear; renderPanel(); }));
+
+  const months = patrimonioMonthsInYear(panelState.year);
+  if (!panelState.month || !months.includes(panelState.month)) panelState.month = months[months.length - 1];
+  const mEl = document.getElementById('pnlMonthTabs');
+  mEl.classList.toggle('hidden', panelState.viewMode !== 'month');
+  if (panelState.viewMode === 'month') {
+    mEl.innerHTML = months.map(m => `<button data-pnlmonth="${m}" class="pill-tab font-mono text-sm px-4 py-1.5 rounded-full text-inkmuted capitalize ${panelState.month === m ? 'active text-ink' : ''}">${monthLabel(m)}</button>`).join('');
+    mEl.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { panelState.month = b.dataset.pnlmonth; renderPanel(); }));
+  }
+}
+
+function renderPatrimonioHero() {
+  const isAll = panelState.asset === 'all';
+  const acc = isAll ? null : ACCOUNTS.find(a => a.id === panelState.asset);
+  const currency = acc ? (acc.currency || 'EUR') : 'EUR';
+  const current = isAll ? currentPatrimonioTotal() : acc.balance;
+  document.getElementById('pnlSubtitle').textContent = isAll ? 'Patrimonio Total' : acc.name;
+  document.getElementById('pnlHeroValue').textContent = fmtMoney(current, currency);
+
+  const prevCutoff = addMonths(monthKey(TODAY), -1) + '-31';
+  const prevVal = isAll ? totalPatrimonioAt(prevCutoff) : accBalanceAt(acc, prevCutoff);
+  const deltaEl = document.getElementById('pnlHeroDelta');
+  if (prevVal == null) { deltaEl.textContent = ''; return; }
+  const delta = current - prevVal;
+  const deltaPct = prevVal !== 0 ? (delta / Math.abs(prevVal)) * 100 : 0;
+  const color = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
+  deltaEl.className = 'money text-sm font-mono mt-1.5 ' + color;
+  deltaEl.textContent = `${delta >= 0 ? '+' : ''}${fmtMoney(delta, currency)} (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}%) vs mes anterior`;
+}
+
+function renderPatrimonioChart() {
+  const isAll = panelState.asset === 'all';
+  const acc = isAll ? null : ACCOUNTS.find(a => a.id === panelState.asset);
+  let dates = patrimonioSeriesDates();
+  if (acc && acc.history && acc.history.length) dates = dates.filter(d => d >= acc.history[0].date);
+  const canvas = document.getElementById('patrimonioChart');
+  const emptyMsg = document.getElementById('pnlChartEmpty');
+  const caption = document.getElementById('pnlCaption');
+
+  if (!dates.length) {
+    if (patrimonioChart) { patrimonioChart.destroy(); patrimonioChart = null; }
+    canvas.classList.add('hidden'); emptyMsg.classList.remove('hidden');
+    caption.textContent = '';
+    return;
+  }
+  canvas.classList.remove('hidden'); emptyMsg.classList.add('hidden');
+
+  const currency = acc ? (acc.currency || 'EUR') : 'EUR';
+  const values = dates.map(d => isAll ? totalPatrimonioAt(d) : (accBalanceAt(acc, d) || 0));
+  const labels = dates.map(d => panelState.viewMode === 'year' ? monthLabel(monthKey(d)) : new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }));
+  const lineColor = isAll ? '#D97757' : accountColor(acc);
+  const inkmuted = themeVar('--color-inkmuted'), border = themeVar('--color-border'), surface = themeVar('--color-surface'), ink = themeVar('--color-ink');
+
+  if (patrimonioChart) patrimonioChart.destroy();
+  const ctx = canvas.getContext('2d');
+  patrimonioChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{
+      data: values, borderColor: lineColor, borderWidth: 2.5, tension: 0.35, fill: true,
+      backgroundColor: (context) => {
+        const { ctx, chartArea } = context.chart;
+        if (!chartArea) return lineColor + '22';
+        const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+        g.addColorStop(0, lineColor + '33'); g.addColorStop(1, lineColor + '00');
+        return g;
+      },
+      pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: lineColor, pointHoverBorderColor: surface, pointHoverBorderWidth: 2,
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: ink, padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, titleFont: { family: 'Inter', size: 11 }, callbacks: { label: (c) => ' ' + fmtMoney(c.parsed.y, currency) } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: inkmuted } },
+        y: { grid: { color: border }, ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: inkmuted, callback: (v) => fmtCompact(v) + (currency === 'USD' ? '$' : '€') } },
+      },
+      interaction: { intersect: false, mode: 'index' },
+      animation: { duration: 450, easing: 'easeOutQuart' },
+    },
+  });
+
+  const scopeLabel = panelState.viewMode === 'year' ? `a lo largo de ${panelState.year}` : `en ${fullMonthLabel(panelState.month)}`;
+  const hasUSD = ACCOUNTS.some(a => a.currency === 'USD');
+  caption.textContent = (isAll ? `Patrimonio total ${scopeLabel}.` : `Evolución de ${acc.name} ${scopeLabel}.`)
+    + (isAll && hasUSD ? ` Las cuentas en USD se convierten a EUR a un tipo aproximado de 1 $ = ${usdToEurRate.toFixed(2)} € para el total combinado.` : '');
+}
+
+function renderPanelAccountsGrid() {
+  const grid = document.getElementById('pnlAccountsGrid');
+  const total = currentPatrimonioTotal();
+  grid.innerHTML = ACCOUNTS.map(acc => {
+    const isLots = LOT_ACCOUNT_TYPES.includes(acc.type);
+    const isCripto = acc.type === 'cripto';
+    const color = accountColor(acc);
+    const iconHTML = acc.logo
+      ? `<img src="${logoImgURL(acc.logo)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🏦'">`
+      : `<span class="text-sm">${isCripto ? '🪙' : (isLots ? '📈' : '🏦')}</span>`;
+    const pct = total !== 0 ? (toEUR(acc.balance, acc.currency || 'EUR') / total) * 100 : 0;
+    const delta = accountDelta(acc);
+    const deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
+    const isFocused = panelState.asset === acc.id;
+    return `<button data-pnlcard="${acc.id}" class="card p-5 text-left w-full transition-shadow ${isFocused ? '' : ''}" style="${isFocused ? `box-shadow:0 0 0 2px ${color};` : ''}">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="w-7 h-7 rounded-full bg-surfacealt overflow-hidden shrink-0 flex items-center justify-center">${iconHTML}</span>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-ink truncate">${acc.name}</p>
+            <p class="text-[11px] text-inkmuted">${pct.toFixed(1)}% del total</p>
+          </div>
+        </div>
+        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${color};"></span>
+      </div>
+      <div class="h-10 mb-3" style="color:${color};">${sparklineSVG(acc.history)}</div>
+      <div class="flex items-end justify-between">
+        <p class="money font-display text-lg text-ink" style="font-weight:500;">${fmtMoney(acc.balance, acc.currency)}</p>
+        <p class="money text-xs font-mono ${deltaColor}">${delta >= 0 ? '+' : ''}${fmtMoney(delta, acc.currency)}</p>
+      </div>
+    </button>`;
+  }).join('');
+  grid.querySelectorAll('[data-pnlcard]').forEach(b => b.addEventListener('click', () => {
+    panelState.asset = parseInt(b.dataset.pnlcard, 10);
+    document.getElementById('pnlAssetFilter').value = String(panelState.asset);
+    renderPanel();
+  }));
+}
+
+function renderPanel() {
+  const hasAccounts = ACCOUNTS.length > 0;
+  document.getElementById('pnlEmpty').classList.toggle('hidden', hasAccounts);
+  document.getElementById('pnlContent').classList.toggle('hidden', !hasAccounts);
+  if (!hasAccounts) return;
+  buildPanelFilterBar();
+  buildPanelPeriodTabs();
+  renderPatrimonioHero();
+  renderPanelAccountsGrid();
+  if (!document.getElementById('panel-section').classList.contains('hidden')) renderPatrimonioChart();
+}
+
+/* =========================================================================
    11c) ALERTAS (recordatorios mensuales configurables)
    ========================================================================= */
 function ordinalDay(d) { return `día ${d}`; }
@@ -2005,7 +2240,7 @@ function showToast(msg) { const t = document.getElementById('toast'); t.textCont
 /* =========================================================================
    17) MASTER RENDER + INIT
    ========================================================================= */
-function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); renderAlerts(); scheduleGhSave(); }
+function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); renderAlerts(); renderPanel(); scheduleGhSave(); }
 
 document.getElementById('searchInput').addEventListener('input', (e) => handleSearchInput(e.target.value));
 document.getElementById('txFilterYear').addEventListener('change', e => { state.txFilter.year = e.target.value; renderTable(); });
@@ -2022,6 +2257,7 @@ function showView(name) {
   Object.entries(VIEW_SECTIONS).forEach(([key, id]) => document.getElementById(id).classList.toggle('hidden', key !== name));
   document.getElementById('btnAddTx').classList.toggle('hidden', name === 'cuentas');
   document.getElementById('btnAddAccountHeader').classList.toggle('hidden', name !== 'cuentas');
+  if (name === 'panel') renderPanel();
   window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.nav-item[data-nav]').forEach(el => el.addEventListener('click', (e) => {
@@ -2044,6 +2280,7 @@ function applyTheme() {
   try { localStorage.setItem('numo_theme', state.theme); } catch (e) {}
   document.getElementById('themeLabel').textContent = state.theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
   if (doughnutChart || barChart) { renderDoughnut(); renderBar(); }
+  if (patrimonioChart) renderPatrimonioChart();
 }
 document.getElementById('btnThemeToggle').addEventListener('click', () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; applyTheme(); });
 
@@ -2209,6 +2446,7 @@ async function initApp() {
   buildFilterBar();
   render();
   maybeShowReminderPopup();
+  fetchUsdEurRate();
 }
 initApp();
 </script>
