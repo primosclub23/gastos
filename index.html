@@ -351,7 +351,7 @@ function fmtMoney(n, currency) {
   if (currency === 'USD') { const s = n < 0 ? '-' : ''; return s + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   return fmtEUR(n);
 }
-function fmtQty(n) { return (n || 0).toLocaleString('es-ES', { maximumFractionDigits: 2 }); }
+function fmtQty(n) { return (n || 0).toLocaleString('es-ES', { maximumFractionDigits: 4 }); }
 function pad2(n) { return String(n).padStart(2, '0'); }
 function monthKey(d) { return d.slice(0, 7); }
 function yearKey(d) { return d.slice(0, 4); }
@@ -837,20 +837,23 @@ function renderAccounts() {
       deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
       deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
-      subtitle = accAssetGroups(acc).map(g => `${fmtQty(groupQty(g.lots))} ${g.symbol}`).join(' · ') || 'Sin compras';
+      const groups = accAssetGroups(acc);
+      subtitle = groups.length
+        ? groups.map(g => `<p class="text-xs text-inkmuted truncate">${fmtQty(groupQty(g.lots))} ${g.symbol} · promedio ${fmtMoney(groupAvgPrice(g.lots), acc.currency)}</p>`).join('')
+        : `<p class="text-xs text-inkmuted truncate">Sin compras</p>`;
     } else if (isLots) {
       const reval = accRevaluation(acc);
       const revalPct = accRevaluationPct(acc);
       deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       deltaArrow = reval > 0 ? '↗' : (reval < 0 ? '↘' : '↗');
       deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
-      subtitle = `${fmtQty(accTotalShares(acc))} acc. · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}`;
+      subtitle = `<p class="text-xs text-inkmuted truncate">${fmtQty(accTotalShares(acc))} acc. · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}</p>`;
     } else {
       const delta = accountDelta(acc);
       deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
       deltaArrow = delta > 0 ? '↗' : (delta < 0 ? '↘' : '↗');
       deltaLabel = `${fmtEUR(Math.abs(delta))} vs mes anterior ${deltaArrow}`;
-      subtitle = acc.bank || ACCOUNT_TYPES[acc.type] || 'Otros';
+      subtitle = `<p class="text-xs text-inkmuted truncate">${acc.bank || ACCOUNT_TYPES[acc.type] || 'Otros'}</p>`;
     }
     const iconHTML = acc.logo
       ? `<img src="${logoImgURL(acc.logo)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🏦'">`
@@ -861,7 +864,7 @@ function renderAccounts() {
           <span class="w-7 h-7 rounded-full bg-surfacealt overflow-hidden shrink-0 flex items-center justify-center">${iconHTML}</span>
           <div class="min-w-0">
             <p class="text-sm font-semibold text-ink truncate">${acc.name}</p>
-            <p class="text-xs text-inkmuted truncate">${subtitle}</p>
+            ${subtitle}
           </div>
         </div>
         <div class="text-right shrink-0">
