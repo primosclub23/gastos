@@ -415,14 +415,19 @@ async function fetchCryptoPriceById(id, currency) {
   if (price == null) throw new Error('moneda no encontrada en CoinGecko');
   return price;
 }
-function accTotalShares(acc) { const sum = (acc.lots || []).reduce((s, l) => s + l.qty, 0); return Math.round(sum * 1e8) / 1e8; }
+async function fetchStockPriceByTicker(ticker) {
+  if (!ticker) throw new Error('falta el ticker');
+  const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}`);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  const result = json.chart && json.chart.result && json.chart.result[0];
+  const price = result && result.meta && result.meta.regularMarketPrice;
+  if (price == null) throw new Error('ticker no encontrado en Yahoo Finance');
+  return price;
+}
 function accTotalCost(acc) { return (acc.lots || []).reduce((s, l) => s + l.price * l.qty, 0); }
-function accAvgPrice(acc) { const q = accTotalShares(acc); return q > 0 ? accTotalCost(acc) / q : 0; }
-function accCurrentValue(acc) { return accTotalShares(acc) * (acc.currentPrice || 0); }
-function accRevaluation(acc) { return accCurrentValue(acc) - accTotalCost(acc); }
-function accRevaluationPct(acc) { const cost = accTotalCost(acc); return cost > 0 ? (accRevaluation(acc) / cost) * 100 : 0; }
 
-// --- Cripto: una cuenta puede tener varios activos distintos (BTC, XRP, ...) mezclados en sus compras ---
+// --- Acciones y Cripto: una cuenta puede tener varios activos distintos (BTC+XRP, o varios tickers) mezclados en sus compras ---
 function groupQty(lots) { const sum = lots.reduce((s, l) => s + l.qty, 0); return Math.round(sum * 1e8) / 1e8; }
 function groupCost(lots) { return lots.reduce((s, l) => s + l.price * l.qty, 0); }
 function groupAvgPrice(lots) { const q = groupQty(lots); return q > 0 ? groupCost(lots) / q : 0; }
@@ -441,9 +446,34 @@ function accCurrentPriceFor(acc, symbol) {
   if (acc.symbol === symbol && acc.currentPrice != null) return acc.currentPrice; // compat cuentas antiguas de un solo activo
   return 0;
 }
-function accCryptoCurrentValue(acc) { return accAssetGroups(acc).reduce((sum, g) => sum + groupQty(g.lots) * accCurrentPriceFor(acc, g.symbol), 0); }
-function accCryptoRevaluation(acc) { return accCryptoCurrentValue(acc) - accTotalCost(acc); }
-function accCryptoRevaluationPct(acc) { const cost = accTotalCost(acc); return cost > 0 ? (accCryptoRevaluation(acc) / cost) * 100 : 0; }
+function accMultiCurrentValue(acc) { return accAssetGroups(acc).reduce((sum, g) => sum + groupQty(g.lots) * accCurrentPriceFor(acc, g.symbol), 0); }
+function accMultiRevaluation(acc) { return accMultiCurrentValue(acc) - accTotalCost(acc); }
+function accMultiRevaluationPct(acc) { const cost = accTotalCost(acc); return cost > 0 ? (accMultiRevaluation(acc) / cost) * 100 : 0; }
+function synthesizeSymbol(name) {
+  return (name || 'ACTIVO').toUpperCase().replace(/\bACCIONES?\b/g, '').trim().replace(/[^A-Z0-9]+/g, '').slice(0, 10) || 'ACTIVO';
+}
+function migrateLegacyAccounts() {
+  // cuentas Acciones/Cripto guardadas antes de soportar varios activos por cuenta:
+  // cada compra pasa a llevar su propio símbolo, y el precio único de la cuenta se traslada a currentPrices.
+  let changed = false;
+  ACCOUNTS.forEach(acc => {
+    if (!LOT_ACCOUNT_TYPES.includes(acc.type)) return;
+    (acc.lots || []).forEach(lot => {
+      if (!lot.symbol) {
+        if (acc.symbol) { lot.symbol = acc.symbol; lot.cgId = acc.cgId || acc.symbol; }
+        else { const synth = synthesizeSymbol(acc.name); lot.symbol = synth; lot.cgId = synth; }
+        changed = true;
+      }
+    });
+    if (acc.symbol || acc.cgId || acc.currentPrice != null) {
+      if (!acc.currentPrices) acc.currentPrices = {};
+      if (acc.symbol && acc.currentPrice != null && acc.currentPrices[acc.symbol] == null) acc.currentPrices[acc.symbol] = acc.currentPrice;
+      acc.symbol = null; acc.cgId = null; acc.currentPrice = null;
+      changed = true;
+    }
+  });
+  return changed;
+}
 
 let TRANSACTIONS = [];  // sin datos de ejemplo — listo para tus movimientos reales
 let ACCOUNTS = [];      // cuentas manuales (plan de pensiones, inversiones, etc.)
@@ -826,7 +856,7 @@ function accountDelta(acc) {
   return acc.balance - prev.balance;
 }
 function cryptoIconURL(symbol) { return `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/128/color/${symbol.toLowerCase()}.png`; }
-function cryptoAssetRowHTML(g, acc, isLast) {
+function multiAssetRowHTML(g, acc, isLast, isCripto) {
   const qty = groupQty(g.lots);
   const avg = groupAvgPrice(g.lots);
   const price = accCurrentPriceFor(acc, g.symbol);
@@ -835,11 +865,12 @@ function cryptoAssetRowHTML(g, acc, isLast) {
   const pnl = value - cost;
   const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
   const pnlColor = pnl > 0 ? 'text-good' : (pnl < 0 ? 'text-bad' : 'text-inkmuted');
+  const iconHTML = isCripto
+    ? `<img src="${cryptoIconURL(g.symbol)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='📈'">`
+    : `<span class="text-sm">📈</span>`;
   return `<div class="flex items-center justify-between py-2 ${isLast ? '' : 'border-b border-border'}">
     <div class="flex items-center gap-2.5 min-w-0">
-      <span class="w-7 h-7 rounded-full bg-surfacealt overflow-hidden shrink-0 flex items-center justify-center">
-        <img src="${cryptoIconURL(g.symbol)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🪙'">
-      </span>
+      <span class="w-7 h-7 rounded-full bg-surfacealt overflow-hidden shrink-0 flex items-center justify-center">${iconHTML}</span>
       <div class="min-w-0">
         <p class="text-xs font-semibold text-ink">${g.symbol}</p>
         <p class="text-[11px] text-inkmuted whitespace-nowrap">${fmtQty(qty)} · promedio ${fmtMoney(avg, acc.currency)}</p>
@@ -851,18 +882,22 @@ function cryptoAssetRowHTML(g, acc, isLast) {
     </div>
   </div>`;
 }
-async function refreshCryptoPrices(accId) {
+async function refreshMultiAssetPrices(accId) {
   const acc = ACCOUNTS.find(a => a.id === accId);
   if (!acc) return;
-  const groups = accAssetGroups(acc).filter(g => g.cgId);
-  if (!groups.length) { showToast('Esta cuenta no tiene activos con id de CoinGecko para actualizar.'); return; }
+  const isCripto = acc.type === 'cripto';
+  const groups = accAssetGroups(acc).filter(g => isCripto ? g.cgId : (g.cgId || g.symbol));
+  if (!groups.length) { showToast('Esta cuenta no tiene activos para actualizar.'); return; }
   const btn = document.querySelector(`[data-refreshprices="${accId}"]`);
-  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = 'Actualizando…'; }
-  const results = await Promise.allSettled(groups.map(g => fetchCryptoPriceById(g.cgId, acc.currency).then(price => ({ symbol: g.symbol, price }))));
+  if (btn) { btn.disabled = true; const span = btn.querySelector('span'); if (span) span.textContent = 'Actualizando…'; }
+  const results = await Promise.allSettled(groups.map(g => {
+    const p = isCripto ? fetchCryptoPriceById(g.cgId, acc.currency) : fetchStockPriceByTicker(g.cgId || g.symbol);
+    return p.then(price => ({ symbol: g.symbol, price }));
+  }));
   if (!acc.currentPrices) acc.currentPrices = {};
   let ok = 0, failed = 0;
   results.forEach(r => { if (r.status === 'fulfilled') { acc.currentPrices[r.value.symbol] = r.value.price; ok++; } else failed++; });
-  const newBalance = accCryptoCurrentValue(acc);
+  const newBalance = accMultiCurrentValue(acc);
   if (newBalance !== acc.balance) { acc.balance = newBalance; acc.history.push({ date: TODAY, balance: newBalance }); }
   renderAccounts();
   scheduleGhSave();
@@ -877,13 +912,13 @@ function renderAccounts() {
       ? `<img src="${logoImgURL(acc.logo)}" class="w-full h-full object-cover" onerror="this.parentElement.textContent='🏦'">`
       : `<span class="text-sm">${isCripto ? '🪙' : (isLots ? '📈' : '🏦')}</span>`;
 
-    if (isCripto) {
-      const reval = accCryptoRevaluation(acc);
-      const revalPct = accCryptoRevaluationPct(acc);
+    if (isLots) {
+      const reval = accMultiRevaluation(acc);
+      const revalPct = accMultiRevaluationPct(acc);
       const deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
       const groups = accAssetGroups(acc);
       const rowsHTML = groups.length
-        ? groups.map((g, i) => cryptoAssetRowHTML(g, acc, i === groups.length - 1)).join('')
+        ? groups.map((g, i) => multiAssetRowHTML(g, acc, i === groups.length - 1, isCripto)).join('')
         : `<p class="text-xs text-inkmuted italic py-2">Todavía no has añadido ninguna compra.</p>`;
       return `<div class="card p-6">
         <div class="flex items-center justify-between mb-3">
@@ -907,20 +942,11 @@ function renderAccounts() {
       </div>`;
     }
 
-    let deltaLabel, deltaColor, subtitle;
-    if (isLots) {
-      const reval = accRevaluation(acc);
-      const revalPct = accRevaluationPct(acc);
-      deltaColor = reval > 0 ? 'text-good' : (reval < 0 ? 'text-bad' : 'text-inkmuted');
-      deltaLabel = `${reval >= 0 ? '+' : ''}${fmtMoney(reval, acc.currency)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%) revalorización`;
-      subtitle = `<p class="text-xs text-inkmuted truncate">${fmtQty(accTotalShares(acc))} acc. · promedio ${fmtMoney(accAvgPrice(acc), acc.currency)}</p>`;
-    } else {
-      const delta = accountDelta(acc);
-      deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
-      const deltaArrow = delta > 0 ? '↗' : (delta < 0 ? '↘' : '↗');
-      deltaLabel = `${fmtEUR(Math.abs(delta))} vs mes anterior ${deltaArrow}`;
-      subtitle = `<p class="text-xs text-inkmuted truncate">${acc.bank || ACCOUNT_TYPES[acc.type] || 'Otros'}</p>`;
-    }
+    const delta = accountDelta(acc);
+    const deltaColor = delta > 0 ? 'text-good' : (delta < 0 ? 'text-bad' : 'text-inkmuted');
+    const deltaArrow = delta > 0 ? '↗' : (delta < 0 ? '↘' : '↗');
+    const deltaLabel = `${fmtEUR(Math.abs(delta))} vs mes anterior ${deltaArrow}`;
+    const subtitle = `<p class="text-xs text-inkmuted truncate">${acc.bank || ACCOUNT_TYPES[acc.type] || 'Otros'}</p>`;
     return `<div class="card p-6">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5 min-w-0">
@@ -939,7 +965,7 @@ function renderAccounts() {
       <div class="flex items-center justify-between">
         <button data-updatebal="${acc.id}" class="btn-outline rounded-full px-3 py-1.5 text-xs font-medium flex items-center gap-1.5">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l4 4-4 4M3 12v-2a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 12v2a4 4 0 0 1-4 4H3"/></svg>
-          ${isLots ? 'Actualizar cotización' : 'Actualizar balance'}
+          Actualizar balance
         </button>
         <button data-details="${acc.id}" class="text-xs text-inkmuted hover:text-ink font-medium">Detalles →</button>
       </div>
@@ -952,7 +978,7 @@ function renderAccounts() {
     </button>`;
   grid.querySelectorAll('[data-updatebal]').forEach(b => b.addEventListener('click', () => openAccountModal(ACCOUNTS.find(a => a.id === parseInt(b.dataset.updatebal, 10)))));
   grid.querySelectorAll('[data-details]').forEach(b => b.addEventListener('click', () => openAccountModal(ACCOUNTS.find(a => a.id === parseInt(b.dataset.details, 10)))));
-  grid.querySelectorAll('[data-refreshprices]').forEach(b => b.addEventListener('click', () => refreshCryptoPrices(parseInt(b.dataset.refreshprices, 10))));
+  grid.querySelectorAll('[data-refreshprices]').forEach(b => b.addEventListener('click', () => refreshMultiAssetPrices(parseInt(b.dataset.refreshprices, 10))));
   document.getElementById('btnAddAccountCard').addEventListener('click', () => openAccountModal(null));
 }
 function openAccountModal(existing) {
@@ -966,12 +992,14 @@ function openAccountModal(existing) {
   let lotSeq = 0;
   let lotsVal = existing && existing.lots ? existing.lots.map(l => {
     const lot = { ...l, _id: ++lotSeq };
-    if (existing.type === 'cripto' && !lot.symbol && existing.symbol) { lot.symbol = existing.symbol; lot.cgId = existing.cgId || null; }
+    if (LOT_ACCOUNT_TYPES.includes(existing.type) && !lot.symbol) {
+      if (existing.symbol) { lot.symbol = existing.symbol; lot.cgId = existing.cgId || existing.symbol; }
+      else { const synth = synthesizeSymbol(existing.name); lot.symbol = synth; lot.cgId = synth; }
+    }
     return lot;
   }) : [];
-  let currentPriceVal = existing && existing.currentPrice != null ? String(existing.currentPrice) : '';
   let currentPricesVal = {};
-  if (existing && existing.type === 'cripto') {
+  if (existing && LOT_ACCOUNT_TYPES.includes(existing.type)) {
     if (existing.currentPrices) Object.keys(existing.currentPrices).forEach(k => currentPricesVal[k] = String(existing.currentPrices[k]));
     else if (existing.symbol && existing.currentPrice != null) currentPricesVal[existing.symbol] = String(existing.currentPrice);
   }
@@ -979,54 +1007,13 @@ function openAccountModal(existing) {
   let symbolVal = 'BTC';
   let customLabelVal = '';
   let customIdVal = '';
+  let stockTickerVal = '';
   let editingLotId = null;
   let lotDraftDate = TODAY, lotDraftPrice = '', lotDraftQty = '';
 
-  function stockLotsHTML() {
-    const totalShares = accTotalShares({ lots: lotsVal });
-    const avgPrice = accAvgPrice({ lots: lotsVal });
-    const totalCost = accTotalCost({ lots: lotsVal });
-    const currentPriceNum = parseFloat(currentPriceVal) || 0;
-    const currentValue = totalShares * currentPriceNum;
-    const reval = currentValue - totalCost;
-    const revalPct = totalCost > 0 ? (reval / totalCost) * 100 : 0;
-    const rows = lotsVal.map(l => `
-      <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0 ${l._id === editingLotId ? 'opacity-50' : ''}">
-        <span class="text-inkmuted font-mono">${new Date(l.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-        <span class="text-ink">${fmtQty(l.qty)} acciones × ${fmtMoney(l.price, currencyVal)}</span>
-        <span class="flex items-center gap-2 shrink-0">
-          <button data-editlot="${l._id}" class="text-inkmuted hover:text-ink" title="Editar compra">✎</button>
-          <button data-dellot="${l._id}" class="text-inkmuted hover:text-bad" title="Eliminar compra">✕</button>
-        </span>
-      </div>`).join('') || `<p class="text-xs text-inkmuted italic py-1.5">Todavía no has añadido ninguna compra.</p>`;
-    return `
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
-      <div class="flex gap-2 mt-1.5 mb-4">
-        <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
-        <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
-      </div>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (fecha · precio · nº acciones)</label>
-      <div class="mt-1.5 mb-2 max-h-32 overflow-y-auto -mr-2 pr-2">${rows}</div>
-      <div class="grid grid-cols-3 gap-2 mb-2">
-        <input id="fLotDate" type="date" value="${lotDraftDate}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-        <input id="fLotPrice" type="number" step="0.0001" min="0" value="${lotDraftPrice}" placeholder="Precio ${currencyVal === 'USD' ? '$' : '€'}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-        <input id="fLotQty" type="number" step="0.0001" min="0" value="${lotDraftQty}" placeholder="Nº acciones" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-      </div>
-      <div class="flex gap-2 mb-4">
-        <button id="fAddLot" type="button" class="btn-outline flex-1 rounded-full py-2 text-xs font-medium">${editingLotId ? 'Guardar cambios en la compra' : '+ Añadir compra'}</button>
-        ${editingLotId ? `<button id="fCancelEditLot" type="button" class="text-xs text-inkmuted hover:text-ink underline shrink-0 px-2">Cancelar</button>` : ''}
-      </div>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Precio actual por acción (${currencyVal === 'USD' ? '$' : '€'})</label>
-      <input id="fCurrentPrice" type="number" step="0.0001" min="0" value="${currentPriceVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
-      <div class="card p-3 mb-5 grid grid-cols-2 gap-2 text-xs">
-        <div><p class="text-inkmuted">Nº acciones</p><p class="text-ink font-mono">${fmtQty(totalShares)}</p></div>
-        <div><p class="text-inkmuted">Precio promedio</p><p class="text-ink font-mono">${fmtMoney(avgPrice, currencyVal)}</p></div>
-        <div><p class="text-inkmuted">Valor actual</p><p class="text-ink font-mono">${fmtMoney(currentValue, currencyVal)}</p></div>
-        <div><p class="text-inkmuted">Revalorización</p><p class="font-mono ${reval >= 0 ? 'text-good' : 'text-bad'}">${reval >= 0 ? '+' : ''}${fmtMoney(reval, currencyVal)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p></div>
-      </div>`;
-  }
-
-  function cryptoLotsHTML() {
+  function multiAssetLotsHTML(isCripto) {
+    const unit = isCripto ? 'unidad' : 'acción';
+    const unitPlural = isCripto ? 'unidades' : 'acciones';
     const rows = lotsVal.map(l => `
       <div class="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0 ${l._id === editingLotId ? 'opacity-50' : ''}">
         <span class="flex items-center gap-1.5 min-w-0 shrink-0">
@@ -1059,22 +1046,17 @@ function openAccountModal(existing) {
         <div class="card p-3 mb-2">
           <div class="flex items-center justify-between mb-2">
             <span class="font-mono text-xs font-semibold text-ink">${g.symbol}</span>
-            <span class="text-xs text-inkmuted">${fmtQty(qty)} uds. · promedio ${fmtMoney(avg, currencyVal)}</span>
+            <span class="text-xs text-inkmuted">${fmtQty(qty)} ${unitPlural} · promedio ${fmtMoney(avg, currencyVal)}</span>
           </div>
           <div class="flex items-center gap-2">
             <input data-curprice="${g.symbol}" type="number" step="0.0001" min="0" value="${curPriceStr}" placeholder="Precio actual" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
-            ${g.cgId ? `<button data-fetchprice="${g.symbol}" data-cgid="${g.cgId}" type="button" class="btn-outline rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap">🔄 Auto</button>` : ''}
+            <button data-fetchprice="${g.symbol}" data-cgid="${g.cgId || g.symbol}" type="button" class="btn-outline rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap">🔄 Auto</button>
           </div>
           <p class="text-xs mt-1.5 ${reval >= 0 ? 'text-good' : 'text-bad'} font-mono">${fmtMoney(value, currencyVal)} · ${reval >= 0 ? '+' : ''}${fmtMoney(reval, currencyVal)} (${revalPct >= 0 ? '+' : ''}${revalPct.toFixed(1)}%)</p>
         </div>`;
     }).join('');
 
-    return `
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
-      <div class="flex gap-2 mt-1.5 mb-4">
-        <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
-        <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
-      </div>
+    const assetFieldHTML = isCripto ? `
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">${editingLotId ? 'Activo de esta compra' : 'Activo de la nueva compra'}</label>
       <select id="fSymbol" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
         ${Object.keys(CRYPTO_SYMBOLS).map(s => `<option value="${s}" ${s === symbolVal ? 'selected' : ''}>${s}</option>`).join('')}
@@ -1087,12 +1069,24 @@ function openAccountModal(existing) {
         </div>
         <p class="text-xs text-inkmuted mb-4">El id es lo que aparece al final de la URL en CoinGecko: coingecko.com/es/monedas/<strong>army-3</strong></p>
       ` : ''}
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (activo · fecha · precio · nº unidades)</label>
+    ` : `
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">${editingLotId ? 'Ticker de esta compra' : 'Ticker de la nueva compra'}</label>
+      <input id="fTicker" type="text" value="${stockTickerVal}" placeholder="ej. BTCI, MSTY, STRC" style="text-transform:uppercase;" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+    `;
+
+    return `
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
+      <div class="flex gap-2 mt-1.5 mb-4">
+        <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
+        <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
+      </div>
+      ${assetFieldHTML}
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Compras (activo · fecha · precio · nº ${unitPlural})</label>
       <div class="mt-1.5 mb-2 max-h-32 overflow-y-auto -mr-2 pr-2">${rows}</div>
       <div class="grid grid-cols-3 gap-2 mb-2">
         <input id="fLotDate" type="date" value="${lotDraftDate}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
         <input id="fLotPrice" type="number" step="0.0001" min="0" value="${lotDraftPrice}" placeholder="Precio ${currencyVal === 'USD' ? '$' : '€'}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
-        <input id="fLotQty" type="number" step="0.0001" min="0" value="${lotDraftQty}" placeholder="Nº unidades" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
+        <input id="fLotQty" type="number" step="0.0001" min="0" value="${lotDraftQty}" placeholder="Nº ${unitPlural}" class="focus-ring rounded-lg border border-border px-2 py-2 text-xs" />
       </div>
       <div class="flex gap-2 mb-4">
         <button id="fAddLot" type="button" class="btn-outline flex-1 rounded-full py-2 text-xs font-medium">${editingLotId ? 'Guardar cambios en la compra' : '+ Añadir compra'}</button>
@@ -1104,7 +1098,6 @@ function openAccountModal(existing) {
         <div><p class="text-inkmuted">Revalorización total</p><p class="font-mono ${totalReval >= 0 ? 'text-good' : 'text-bad'}">${totalReval >= 0 ? '+' : ''}${fmtMoney(totalReval, currencyVal)} (${totalRevalPct >= 0 ? '+' : ''}${totalRevalPct.toFixed(1)}%)</p></div>
       </div>`;
   }
-  function lotsBlockHTML(isCripto) { return isCripto ? cryptoLotsHTML() : stockLotsHTML(); }
 
   function paint() {
     const isLots = LOT_ACCOUNT_TYPES.includes(typeVal);
@@ -1114,7 +1107,7 @@ function openAccountModal(existing) {
       <h3 class="font-display text-xl mb-1" style="font-weight:560;">${existing ? 'Actualizar cuenta' : 'Crear Cuenta'}</h3>
       <p class="text-xs text-inkmuted mb-4">Crea una cuenta bancaria, un préstamo, unas acciones o una propiedad para seguirla manualmente.</p>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Nombre</label>
-      <input id="fName" type="text" value="${nameVal}" placeholder="ej. Acciones Repsol, Cripto BTC" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <input id="fName" type="text" value="${nameVal}" placeholder="ej. Interactive Brokers, Cripto Tangem" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Tipo de Cuenta</label>
       <select id="fType" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
         <option value="">Seleccionar tipo de cuenta</option>
@@ -1123,9 +1116,9 @@ function openAccountModal(existing) {
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Banco / Entidad (opcional)</label>
       <div class="flex items-center gap-2 mt-1.5 mb-4">
         <span id="fLogoPreview" class="w-8 h-8 rounded-full bg-surfacealt flex items-center justify-center overflow-hidden shrink-0">${renderLogoPreview(logoVal)}</span>
-        <input id="fBank" type="text" value="${bankVal}" placeholder="ej. BBVA" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
+        <input id="fBank" type="text" value="${bankVal}" placeholder="ej. Interactive Brokers" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
       </div>
-      ${isLots ? lotsBlockHTML(isCripto) : `
+      ${isLots ? multiAssetLotsHTML(isCripto) : `
         <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">${existing ? 'Balance actual (€)' : 'Saldo inicial (€)'}</label>
         <input id="fBalance" type="number" step="0.01" value="${balanceVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
       `}
@@ -1142,61 +1135,33 @@ function openAccountModal(existing) {
     });
     if (isLots) {
       card.querySelectorAll('[data-currency]').forEach(b => b.addEventListener('click', () => { currencyVal = b.dataset.currency; paint(); }));
-    }
-    if (isLots && !isCripto) {
-      document.getElementById('fCurrentPrice').addEventListener('input', e => { currentPriceVal = e.target.value; });
-      document.getElementById('fAddLot').addEventListener('click', () => {
-        const date = document.getElementById('fLotDate').value;
-        const price = parseFloat(document.getElementById('fLotPrice').value);
-        const qty = parseFloat(document.getElementById('fLotQty').value);
-        if (!date || isNaN(price) || price < 0 || isNaN(qty) || qty <= 0) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
-        if (editingLotId) {
-          const lot = lotsVal.find(l => l._id === editingLotId);
-          if (lot) { lot.date = date; lot.price = price; lot.qty = qty; }
-          editingLotId = null;
-        } else {
-          lotsVal.push({ _id: ++lotSeq, date, price, qty });
-        }
-        if (!currentPriceVal) currentPriceVal = String(price);
-        lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = '';
-        paint();
-      });
-      const fCancelEditLot = document.getElementById('fCancelEditLot');
-      if (fCancelEditLot) fCancelEditLot.addEventListener('click', () => {
-        editingLotId = null; lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = '';
-        paint();
-      });
-      card.querySelectorAll('[data-editlot]').forEach(b => b.addEventListener('click', () => {
-        const id = parseInt(b.dataset.editlot, 10);
-        const lot = lotsVal.find(l => l._id === id);
-        if (!lot) return;
-        editingLotId = id; lotDraftDate = lot.date; lotDraftPrice = String(lot.price); lotDraftQty = String(lot.qty);
-        paint();
-      }));
-      card.querySelectorAll('[data-dellot]').forEach(b => b.addEventListener('click', () => {
-        const id = parseInt(b.dataset.dellot, 10);
-        lotsVal = lotsVal.filter(l => l._id !== id);
-        if (editingLotId === id) { editingLotId = null; lotDraftDate = TODAY; lotDraftPrice = ''; lotDraftQty = ''; }
-        paint();
-      }));
-    } else if (isCripto) {
-      document.getElementById('fSymbol').addEventListener('change', e => { symbolVal = e.target.value; paint(); });
-      const fCustomLabel = document.getElementById('fCustomLabel');
-      const fCustomId = document.getElementById('fCustomId');
-      if (fCustomLabel) fCustomLabel.addEventListener('input', e => customLabelVal = e.target.value);
-      if (fCustomId) fCustomId.addEventListener('input', e => customIdVal = e.target.value);
+      if (isCripto) {
+        document.getElementById('fSymbol').addEventListener('change', e => { symbolVal = e.target.value; paint(); });
+        const fCustomLabel = document.getElementById('fCustomLabel');
+        const fCustomId = document.getElementById('fCustomId');
+        if (fCustomLabel) fCustomLabel.addEventListener('input', e => customLabelVal = e.target.value);
+        if (fCustomId) fCustomId.addEventListener('input', e => customIdVal = e.target.value);
+      } else {
+        document.getElementById('fTicker').addEventListener('input', e => stockTickerVal = e.target.value);
+      }
       document.getElementById('fAddLot').addEventListener('click', () => {
         const date = document.getElementById('fLotDate').value;
         const price = parseFloat(document.getElementById('fLotPrice').value);
         const qty = parseFloat(document.getElementById('fLotQty').value);
         if (!date || isNaN(price) || price < 0 || isNaN(qty) || qty <= 0) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
         let symbol, cgId;
-        if (symbolVal === 'otra') {
-          cgId = customIdVal.trim();
-          if (!cgId) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
-          symbol = (customLabelVal.trim() || cgId).toUpperCase();
+        if (isCripto) {
+          if (symbolVal === 'otra') {
+            cgId = customIdVal.trim();
+            if (!cgId) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
+            symbol = (customLabelVal.trim() || cgId).toUpperCase();
+          } else {
+            symbol = symbolVal; cgId = CRYPTO_SYMBOLS[symbolVal];
+          }
         } else {
-          symbol = symbolVal; cgId = CRYPTO_SYMBOLS[symbolVal];
+          symbol = stockTickerVal.trim().toUpperCase();
+          if (!symbol) { document.getElementById('fAddLot').classList.add('ring-2', 'ring-bad'); return; }
+          cgId = symbol;
         }
         if (editingLotId) {
           const lot = lotsVal.find(l => l._id === editingLotId);
@@ -1219,10 +1184,14 @@ function openAccountModal(existing) {
         const lot = lotsVal.find(l => l._id === id);
         if (!lot) return;
         editingLotId = id; lotDraftDate = lot.date; lotDraftPrice = String(lot.price); lotDraftQty = String(lot.qty);
-        const known = CRYPTO_SYMBOLS[lot.symbol] === lot.cgId;
-        symbolVal = known ? lot.symbol : 'otra';
-        customLabelVal = known ? '' : (lot.symbol || '');
-        customIdVal = known ? '' : (lot.cgId || '');
+        if (isCripto) {
+          const known = CRYPTO_SYMBOLS[lot.symbol] === lot.cgId;
+          symbolVal = known ? lot.symbol : 'otra';
+          customLabelVal = known ? '' : (lot.symbol || '');
+          customIdVal = known ? '' : (lot.cgId || '');
+        } else {
+          stockTickerVal = lot.symbol || '';
+        }
         paint();
       }));
       card.querySelectorAll('[data-dellot]').forEach(b => b.addEventListener('click', () => {
@@ -1236,7 +1205,7 @@ function openAccountModal(existing) {
         const symbol = btn.dataset.fetchprice, cgId = btn.dataset.cgid;
         btn.disabled = true; const original = btn.textContent; btn.textContent = '…';
         try {
-          const price = await fetchCryptoPriceById(cgId, currencyVal);
+          const price = isCripto ? await fetchCryptoPriceById(cgId, currencyVal) : await fetchStockPriceByTicker(cgId);
           currentPricesVal[symbol] = String(price);
           paint();
           showToast(`Precio de ${symbol} actualizado: ${fmtMoney(price, currencyVal)}`);
@@ -1260,7 +1229,7 @@ function openAccountModal(existing) {
       if (!name || !typeVal) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
       let balance;
       let extra = {};
-      if (isCripto) {
+      if (isLots) {
         const currentPrices = {};
         let invalid = false;
         Object.keys(currentPricesVal).forEach(sym => {
@@ -1271,11 +1240,6 @@ function openAccountModal(existing) {
         if (invalid) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
         balance = accAssetGroups({ lots: lotsVal }).reduce((sum, g) => sum + groupQty(g.lots) * (currentPrices[g.symbol] || 0), 0);
         extra = { lots: lotsVal.map(({ _id, ...l }) => l), currentPrices, currency: currencyVal, symbol: null, cgId: null, currentPrice: null };
-      } else if (isLots) {
-        const currentPrice = parseFloat(currentPriceVal);
-        if (isNaN(currentPrice) || currentPrice < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
-        balance = accTotalShares({ lots: lotsVal }) * currentPrice;
-        extra = { lots: lotsVal.map(({ _id, ...l }) => l), currentPrice, currency: currencyVal };
       } else {
         balance = parseFloat(document.getElementById('fBalance').value);
         if (isNaN(balance)) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
@@ -1904,6 +1868,7 @@ const MERCHANT_LOGOS = [
   ['revolut', 'revolut.com'], ['n26', 'n26.com'], ['evobanco', 'evobanco.com'], ['unicaja', 'unicajabanco.es'],
   ['kutxabank', 'kutxabank.es'], ['abanca', 'abanca.com'], ['imaginbank', 'imaginbank.com'], ['myinvestor', 'myinvestor.es'],
   ['trade republic', 'traderepublic.com'], ['degiro', 'degiro.es'], ['indexa', 'indexacapital.com'],
+  ['interactive brokers', 'interactivebrokers.com'], ['ibkr', 'interactivebrokers.com'],
   ['tangem', 'tangem.com'], ['ledger', 'ledger.com'], ['trezor', 'trezor.io'], ['binance', 'binance.com'],
   ['coinbase', 'coinbase.com'], ['kraken', 'kraken.com'], ['bit2me', 'bit2me.com'], ['bitpanda', 'bitpanda.com'],
   ['metamask', 'metamask.io'], ['trust wallet', 'trustwallet.com'],
@@ -2239,6 +2204,7 @@ async function initApp() {
   buildViewToggle();
   await ghLoad();
   regenerateAllRecurring();
+  if (migrateLegacyAccounts()) scheduleGhSave();
   buildPeriodTabs();
   buildFilterBar();
   render();
