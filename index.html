@@ -248,13 +248,6 @@
     <div id="monthTabs" class="flex flex-wrap bg-surfacealt rounded-full p-1"></div>
   </div>
 
-  <!-- ============ VISTA (filtro de categoría) ============ -->
-  <div class="card p-3 sm:p-3.5 mb-6 flex items-center gap-2 flex-wrap">
-    <span class="text-xs uppercase tracking-wide text-inkmuted font-medium mr-1 shrink-0">Vista</span>
-    <div id="viewFilterPills" class="flex gap-2 flex-wrap"></div>
-    <select id="categorySelect" class="focus-ring rounded-full border border-border bg-surface px-3 py-2 text-xs font-medium text-ink"></select>
-  </div>
-
   <div id="focusBanner" class="hidden mb-6 fade-in"></div>
 
   <!-- ============ KPI CARDS ============ -->
@@ -556,7 +549,7 @@ function getMonthsInYear(year) { return getAllMonthsSorted().filter(m => m.start
 const state = { viewMode: 'month', year: yearKey(TODAY), month: monthKey(TODAY), filter: { type: 'all', value: null }, query: '', dismissedReminders: new Set(), popupSeenIds: new Set(), txFilter: { year: 'all', month: 'all', cat: 'all' }, dismissedAlerts: new Set() };
 let doughnutChart, barChart;
 
-function setFilter(type, value) { state.filter = { type, value }; syncFilterBar(); render(); }
+function setFilter(type, value) { state.filter = { type, value }; render(); }
 
 function txForPeriod() { return state.viewMode === 'month' ? TRANSACTIONS.filter(t => monthKey(t.date) === state.month) : TRANSACTIONS.filter(t => yearKey(t.date) === state.year); }
 function txForPreviousPeriod() {
@@ -606,37 +599,8 @@ function syncControls() {
 }
 
 /* =========================================================================
-   6) VISTA (filtro por categoría/grupo) — sustituye al antiguo banner de chips
+   6) FILTRO POR CATEGORÍA/GRUPO (activado al hacer clic en el gráfico de dona)
    ========================================================================= */
-function buildFilterBar() {
-  const pillsEl = document.getElementById('viewFilterPills');
-  const pills = [
-    { type: 'all', value: null, label: 'Todo', color: '#2C2A26' },
-    { type: 'group', value: 'fijo', label: 'Gastos Fijos', color: '#B98D6F' },
-    { type: 'group', value: 'variable', label: 'Gastos Variables', color: '#7C93A6' },
-  ];
-  pillsEl.innerHTML = pills.map((p, i) => `<button data-pill="${i}" class="chip rounded-full px-3 py-1.5 text-xs font-medium text-ink bg-surface">${p.label}</button>`).join('');
-  pillsEl.querySelectorAll('[data-pill]').forEach(btn => btn.addEventListener('click', () => { const p = pills[+btn.dataset.pill]; setFilter(p.type, p.value); }));
-  pillsEl._pills = pills;
-
-  const sel = document.getElementById('categorySelect');
-  const opt = (label, arr) => arr.length ? `<optgroup label="${label}">${arr.map(([k, c]) => `<option value="${k}">${c.label}</option>`).join('')}</optgroup>` : '';
-  sel.innerHTML = `<option value="">Categoría específica…</option>` + opt('Fijos', categoriesInGroup('expense', 'fijo')) + opt('Variables', categoriesInGroup('expense', 'variable')) + opt('Ingresos', categoriesInGroup('income', null));
-  sel.onchange = () => { if (sel.value) setFilter('category', sel.value); else setFilter('all', null); };
-  syncFilterBar();
-}
-function syncFilterBar() {
-  const pillsEl = document.getElementById('viewFilterPills');
-  const pills = pillsEl._pills || [];
-  pillsEl.querySelectorAll('[data-pill]').forEach((btn, i) => {
-    const p = pills[i];
-    const active = state.filter.type === p.type && state.filter.value === p.value;
-    btn.classList.toggle('active', active);
-    btn.style.background = active ? p.color : '#FFFFFF';
-  });
-  const sel = document.getElementById('categorySelect');
-  sel.value = state.filter.type === 'category' ? state.filter.value : '';
-}
 function selectCategoryFilter(key) {
   if (state.filter.type === 'category' && state.filter.value === key) setFilter('all', null);
   else setFilter('category', key);
@@ -1726,7 +1690,7 @@ function deleteCategory(key) {
   showToast(`Categoría "${cat.label}" eliminada.`);
   return true;
 }
-function refreshAfterCategoryChange() { buildFilterBar(); buildPeriodTabs(); render(); }
+function refreshAfterCategoryChange() { buildPeriodTabs(); render(); }
 
 /* =========================================================================
    12b) MODAL — panel de gestión de categorías (reordenar / editar / eliminar)
@@ -1791,6 +1755,25 @@ document.getElementById('modalBackdrop').addEventListener('click', (e) => { if (
 document.getElementById('navCategorias').addEventListener('click', openManageCategoriesModal);
 
 /* =========================================================================
+   12b) AUTOCOMPLETADO DE CONCEPTOS (aprende de movimientos anteriores)
+   ========================================================================= */
+function conceptHistoryMap() {
+  const map = {};
+  [...TRANSACTIONS].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(t => {
+    const key = normalize((t.concept || '').trim());
+    if (!key || map[key]) return;
+    map[key] = { concept: t.concept, cat: t.cat, freq: t.freq, kind: t.amount >= 0 ? 'ingreso' : 'gasto', logo: t.logo || null };
+  });
+  RECURRING.forEach(s => {
+    const key = normalize((s.concept || '').trim());
+    if (!key || map[key]) return;
+    map[key] = { concept: s.concept, cat: s.cat, freq: 'Fijo', kind: s.amount >= 0 ? 'ingreso' : 'gasto', logo: s.logo || null };
+  });
+  return map;
+}
+function conceptListOptionsHTML() { return Object.values(conceptHistoryMap()).map(v => `<option value="${v.concept}"></option>`).join(''); }
+
+/* =========================================================================
    13) MODAL — add transaction (recurrencia opcional)
    ========================================================================= */
 function openTransactionModal() {
@@ -1817,7 +1800,8 @@ function openTransactionModal() {
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Fecha</label>
       <input id="fDate" type="date" value="${dateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
-      <input id="fConcept" type="text" value="${conceptVal}" placeholder="ej. Mercadona" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <input id="fConcept" type="text" list="fConceptList" value="${conceptVal}" placeholder="ej. Mercadona" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <datalist id="fConceptList">${conceptListOptionsHTML()}</datalist>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Logo (opcional)</label>
       <div class="flex items-center gap-2 mt-1.5 mb-4">
         <span id="fLogoPreview" class="w-8 h-8 rounded-full bg-surfacealt flex items-center justify-center overflow-hidden shrink-0">${renderLogoPreview(logoVal)}</span>
@@ -1861,6 +1845,15 @@ function openTransactionModal() {
     document.getElementById('fDate').addEventListener('input', e => dateVal = e.target.value);
     document.getElementById('fConcept').addEventListener('input', e => {
       conceptVal = e.target.value;
+      const known = conceptHistoryMap()[normalize(conceptVal.trim())];
+      if (known) {
+        tipo = known.kind; freq = known.freq; selectedCat = known.cat;
+        logoVal = known.logo || detectLogoDomain(conceptVal) || ''; logoTouched = true;
+        paint();
+        const inp = document.getElementById('fConcept');
+        inp.focus(); inp.setSelectionRange(conceptVal.length, conceptVal.length);
+        return;
+      }
       if (!logoTouched) {
         logoVal = detectLogoDomain(conceptVal) || '';
         document.getElementById('fLogoDomain').value = logoVal;
@@ -2209,7 +2202,7 @@ function tryRestoreFromJSON(rawText) {
     ALERT_SEQ = data.alertSeq || Math.max(0, ...ALERTS.map(a => a.id || 0), 0);
     regenerateAllRecurring();
     setFilter('all', null);
-    buildFilterBar(); buildPeriodTabs(); syncControls(); render();
+    buildPeriodTabs(); syncControls(); render();
     ghSave();
     showToast('Datos restaurados correctamente.');
     return { ok: true };
@@ -2442,7 +2435,7 @@ function openSyncModal() {
     closeModal();
     ghFileSha = null;
     await ghLoad();
-    buildFilterBar(); buildPeriodTabs(); render();
+    buildPeriodTabs(); render();
     showToast('Configuración guardada. Sincronizando…');
   });
   backdrop.classList.remove('hidden');
@@ -2457,7 +2450,6 @@ async function initApp() {
   regenerateAllRecurring();
   if (migrateLegacyAccounts()) scheduleGhSave();
   buildPeriodTabs();
-  buildFilterBar();
   render();
   maybeShowReminderPopup();
   fetchUsdEurRate();
