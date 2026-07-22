@@ -248,18 +248,11 @@
     <div id="monthTabs" class="flex flex-wrap bg-surfacealt rounded-full p-1"></div>
   </div>
 
-  <!-- ============ SEARCH + VISTA (filtro de categoría) ============ -->
-  <div class="card p-3 sm:p-3.5 mb-6 flex flex-col lg:flex-row gap-3 lg:items-center">
-    <div class="relative flex-1 min-w-[200px]">
-      <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-inkmuted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-      <input id="searchInput" type="text" placeholder="Buscar por concepto… (ej. «mercadona»)"
-        class="focus-ring w-full font-mono text-sm rounded-full border border-border bg-sand/60 pl-10 pr-4 py-2.5 placeholder:text-sm focus:bg-surface transition-colors" />
-    </div>
-    <div class="flex items-center gap-2 flex-wrap">
-      <span class="text-xs uppercase tracking-wide text-inkmuted font-medium mr-1 shrink-0">Vista</span>
-      <div id="viewFilterPills" class="flex gap-2 flex-wrap"></div>
-      <select id="categorySelect" class="focus-ring rounded-full border border-border bg-surface px-3 py-2 text-xs font-medium text-ink"></select>
-    </div>
+  <!-- ============ VISTA (filtro de categoría) ============ -->
+  <div class="card p-3 sm:p-3.5 mb-6 flex items-center gap-2 flex-wrap">
+    <span class="text-xs uppercase tracking-wide text-inkmuted font-medium mr-1 shrink-0">Vista</span>
+    <div id="viewFilterPills" class="flex gap-2 flex-wrap"></div>
+    <select id="categorySelect" class="focus-ring rounded-full border border-border bg-surface px-3 py-2 text-xs font-medium text-ink"></select>
   </div>
 
   <div id="focusBanner" class="hidden mb-6 fade-in"></div>
@@ -311,14 +304,21 @@
   <div id="transacciones-section" class="hidden card p-6">
     <div class="flex items-baseline justify-between mb-1">
       <h2 class="font-display text-lg text-ink" style="font-weight:560;">Movimientos</h2>
-      <span id="txCount" class="font-mono text-xs text-inkmuted"></span>
+      <span class="font-mono text-xs text-inkmuted"><span id="txCount"></span><span id="txTotal"></span></span>
     </div>
     <p class="text-xs text-inkmuted mb-4">Más recientes primero · ✎ edita · 🔁 indica un movimiento recurrente</p>
-    <div class="flex flex-wrap items-center gap-2 mb-4">
-      <select id="txFilterYear" class="focus-ring rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink"></select>
-      <select id="txFilterMonth" class="focus-ring rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink"></select>
-      <select id="txFilterCat" class="focus-ring rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink"></select>
-      <button id="txFilterClear" class="hidden text-xs text-inkmuted hover:text-ink underline">Quitar filtros</button>
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+      <div class="relative flex-1 min-w-[200px]">
+        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-inkmuted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="searchInput" type="text" placeholder="Buscar por concepto… (ej. «mercadona»)"
+          class="focus-ring w-full font-mono text-sm rounded-full border border-border bg-sand/60 pl-10 pr-4 py-2.5 placeholder:text-sm focus:bg-surface transition-colors" />
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <select id="txFilterYear" class="focus-ring rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink"></select>
+        <select id="txFilterMonth" class="focus-ring rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink"></select>
+        <select id="txFilterCat" class="focus-ring rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink"></select>
+        <button id="txFilterClear" class="hidden text-xs text-inkmuted hover:text-ink underline">Quitar filtros</button>
+      </div>
     </div>
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
@@ -634,7 +634,7 @@ function selectCategoryFilter(key) {
   if (state.filter.type === 'category' && state.filter.value === key) setFilter('all', null);
   else setFilter('category', key);
 }
-function handleSearchInput(raw) { state.query = raw; render(); }
+function handleSearchInput(raw) { state.query = raw; renderTable(); }
 
 /* =========================================================================
    7) REMINDER BANNER + POPUP
@@ -809,7 +809,8 @@ function buildTxFilterBar() {
   catSel.innerHTML = `<option value="all">Todas las categorías</option>` + opt('Fijos', categoriesInGroup('expense', 'fijo')) + opt('Variables', categoriesInGroup('expense', 'variable')) + opt('Ingresos', categoriesInGroup('income', null));
   catSel.value = state.txFilter.cat;
 
-  const anyActive = state.txFilter.year !== 'all' || state.txFilter.month !== 'all' || state.txFilter.cat !== 'all';
+  document.getElementById('searchInput').value = state.query;
+  const anyActive = state.txFilter.year !== 'all' || state.txFilter.month !== 'all' || state.txFilter.cat !== 'all' || state.query.trim() !== '';
   document.getElementById('txFilterClear').classList.toggle('hidden', !anyActive);
 }
 function renderTable() {
@@ -821,8 +822,10 @@ function renderTable() {
   rows.sort((a, b) => new Date(b.date) - new Date(a.date));
   if (state.query.trim() !== '') { const q = normalize(state.query.trim()); rows = rows.filter(t => normalize(t.concept).includes(q)); }
   document.getElementById('txCount').textContent = `${rows.length} movimiento${rows.length === 1 ? '' : 's'}`;
+  const totalEl = document.getElementById('txTotal');
   const body = document.getElementById('txBody'), empty = document.getElementById('emptyState');
-  if (rows.length === 0) { body.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  if (rows.length === 0) { totalEl.textContent = ''; body.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  totalEl.textContent = ` · Total ${fmtEUR(rows.reduce((s, t) => s + t.amount, 0))}`;
   empty.classList.add('hidden');
   body.innerHTML = rows.map(t => {
     const dateFmt = new Date(t.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
@@ -2246,7 +2249,7 @@ document.getElementById('searchInput').addEventListener('input', (e) => handleSe
 document.getElementById('txFilterYear').addEventListener('change', e => { state.txFilter.year = e.target.value; renderTable(); });
 document.getElementById('txFilterMonth').addEventListener('change', e => { state.txFilter.month = e.target.value; renderTable(); });
 document.getElementById('txFilterCat').addEventListener('change', e => { state.txFilter.cat = e.target.value; renderTable(); });
-document.getElementById('txFilterClear').addEventListener('click', () => { state.txFilter = { year: 'all', month: 'all', cat: 'all' }; renderTable(); });
+document.getElementById('txFilterClear').addEventListener('click', () => { state.txFilter = { year: 'all', month: 'all', cat: 'all' }; state.query = ''; renderTable(); });
 document.getElementById('btnAddTx').addEventListener('click', () => openTransactionModal());
 
 /* =========================================================================
