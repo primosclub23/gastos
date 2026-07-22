@@ -363,6 +363,7 @@ const CATEGORIES = {
   otros_ingresos: { label: 'Otros ingresos',    color: '#8FA6A0', kind: 'income',  group: null,       order: 2, icon: 'M12 3v14 M6 11l6 6 6-6 M5 21h14' },
 };
 const PALETTE = ['#8FA084','#B98D6F','#7C93A6','#A9899C','#C7A15A','#6E8B6B','#96788A','#6F8394','#D1A85C','#8FA6A0'];
+const ACCOUNT_COLOR_SWATCHES = ['#E3B341','#D64545','#E8804C','#1F1F1F','#3B6FA6','#5B9E63','#8B5FBF','#8A8477'];
 
 /* =========================================================================
    2) DATES / HELPERS
@@ -991,6 +992,8 @@ function openAccountModal(existing) {
   let bankVal = existing ? (existing.bank || '') : '';
   let logoVal = existing ? (existing.logo || '') : '';
   let logoTouched = !!logoVal;
+  let colorVal = existing ? (existing.color || '') : '';
+  const colorPreview = colorVal || (existing ? PALETTE[ACCOUNTS.findIndex(a => a.id === existing.id) % PALETTE.length] : PALETTE[ACCOUNTS.length % PALETTE.length]);
   let balanceVal = existing ? String(existing.balance) : '';
   let lotSeq = 0;
   let lotsVal = existing && existing.lots ? existing.lots.map(l => {
@@ -1121,6 +1124,12 @@ function openAccountModal(existing) {
         <span id="fLogoPreview" class="w-8 h-8 rounded-full bg-surfacealt flex items-center justify-center overflow-hidden shrink-0">${renderLogoPreview(logoVal)}</span>
         <input id="fBank" type="text" value="${bankVal}" placeholder="ej. Interactive Brokers" class="focus-ring flex-1 rounded-lg border border-border px-3 py-2 text-sm" />
       </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Color en el gráfico de Patrimonio</label>
+      <div class="flex items-center gap-2 mt-1.5 mb-2">
+        <input id="fColor" type="color" value="${colorPreview}" class="w-10 h-9 rounded-lg border border-border cursor-pointer p-0.5 bg-surface shrink-0" />
+        <span class="text-xs text-inkmuted">Se usa para la línea de esta cuenta en el gráfico del Panel.</span>
+      </div>
+      <div class="flex flex-wrap gap-2 mb-4">${ACCOUNT_COLOR_SWATCHES.map(c => `<span class="swatch" data-colorswatch="${c}" style="background:${c}"></span>`).join('')}</div>
       ${isLots ? multiAssetLotsHTML(isCripto) : `
         <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">${existing ? 'Balance actual (€)' : 'Saldo inicial (€)'}</label>
         <input id="fBalance" type="number" step="0.01" value="${balanceVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
@@ -1136,6 +1145,8 @@ function openAccountModal(existing) {
       bankVal = e.target.value;
       if (!logoTouched) { logoVal = detectLogoDomain(bankVal) || ''; document.getElementById('fLogoPreview').innerHTML = renderLogoPreview(logoVal); }
     });
+    document.getElementById('fColor').addEventListener('input', e => { colorVal = e.target.value; });
+    card.querySelectorAll('[data-colorswatch]').forEach(sw => sw.addEventListener('click', () => { colorVal = sw.dataset.colorswatch; document.getElementById('fColor').value = colorVal; }));
     if (isLots) {
       card.querySelectorAll('[data-currency]').forEach(b => b.addEventListener('click', () => { currencyVal = b.dataset.currency; paint(); }));
       if (isCripto) {
@@ -1248,17 +1259,18 @@ function openAccountModal(existing) {
         if (isNaN(balance)) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
       }
       if (existing) {
-        existing.name = name; existing.type = typeVal; existing.bank = bankVal || null; existing.logo = logoVal || null;
+        existing.name = name; existing.type = typeVal; existing.bank = bankVal || null; existing.logo = logoVal || null; existing.color = colorVal || null;
         Object.assign(existing, extra);
         if (balance !== existing.balance) { existing.balance = balance; existing.history.push({ date: TODAY, balance }); }
         showToast('Cuenta actualizada.');
       } else {
         const acc = mkAccount(name, typeVal, bankVal, logoVal, balance);
+        acc.color = colorVal || null;
         Object.assign(acc, extra);
         ACCOUNTS.push(acc);
         showToast('Cuenta creada.');
       }
-      closeModal(); renderAccounts(); scheduleGhSave();
+      closeModal(); renderAccounts(); scheduleGhSave(); renderPanel();
     });
   }
   paint(); backdrop.classList.remove('hidden');
@@ -1278,7 +1290,7 @@ async function fetchUsdEurRate() {
   } catch (e) { /* se mantiene el tipo aproximado */ }
 }
 function toEUR(amount, currency) { return currency === 'USD' ? amount * usdToEurRate : amount; }
-function accountColor(acc) { return PALETTE[ACCOUNTS.findIndex(a => a.id === acc.id) % PALETTE.length]; }
+function accountColor(acc) { return acc.color || PALETTE[ACCOUNTS.findIndex(a => a.id === acc.id) % PALETTE.length]; }
 function fmtCompact(n) {
   const abs = Math.abs(n);
   if (abs >= 1000) return (n / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + 'k';
@@ -1382,32 +1394,53 @@ function renderPatrimonioChart() {
   }
   canvas.classList.remove('hidden'); emptyMsg.classList.add('hidden');
 
-  const currency = acc ? (acc.currency || 'EUR') : 'EUR';
-  const values = dates.map(d => isAll ? totalPatrimonioAt(d) : (accBalanceAt(acc, d) || 0));
   const labels = dates.map(d => panelState.viewMode === 'year' ? monthLabel(monthKey(d)) : new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }));
-  const lineColor = isAll ? '#D97757' : accountColor(acc);
   const inkmuted = themeVar('--color-inkmuted'), border = themeVar('--color-border'), surface = themeVar('--color-surface'), ink = themeVar('--color-ink');
+
+  let datasets, currency;
+  if (isAll) {
+    currency = 'EUR';
+    datasets = ACCOUNTS.map(a => {
+      const color = accountColor(a);
+      const firstDate = a.history && a.history.length ? a.history[0].date : null;
+      return {
+        label: a.name,
+        data: dates.map(d => (firstDate && d < firstDate) ? null : toEUR(accBalanceAt(a, d) || 0, a.currency || 'EUR')),
+        borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.35, fill: false, spanGaps: false,
+        pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: color, pointHoverBorderColor: surface, pointHoverBorderWidth: 2,
+      };
+    });
+    datasets.push({
+      label: 'Patrimonio Total', data: dates.map(d => totalPatrimonioAt(d)), borderColor: ink, backgroundColor: ink,
+      borderWidth: 2.5, borderDash: [5, 3], tension: 0.35, fill: false, pointRadius: 0, pointHoverRadius: 4,
+      pointHoverBackgroundColor: ink, pointHoverBorderColor: surface, pointHoverBorderWidth: 2,
+    });
+  } else {
+    currency = acc.currency || 'EUR';
+    const color = accountColor(acc);
+    datasets = [{
+      label: acc.name, data: dates.map(d => accBalanceAt(acc, d) || 0), borderColor: color, borderWidth: 2.5, tension: 0.35, fill: true,
+      backgroundColor: (context) => {
+        const { ctx, chartArea } = context.chart;
+        if (!chartArea) return color + '22';
+        const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+        g.addColorStop(0, color + '33'); g.addColorStop(1, color + '00');
+        return g;
+      },
+      pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color, pointHoverBorderColor: surface, pointHoverBorderWidth: 2,
+    }];
+  }
 
   if (patrimonioChart) patrimonioChart.destroy();
   const ctx = canvas.getContext('2d');
   patrimonioChart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{
-      data: values, borderColor: lineColor, borderWidth: 2.5, tension: 0.35, fill: true,
-      backgroundColor: (context) => {
-        const { ctx, chartArea } = context.chart;
-        if (!chartArea) return lineColor + '22';
-        const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-        g.addColorStop(0, lineColor + '33'); g.addColorStop(1, lineColor + '00');
-        return g;
-      },
-      pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: lineColor, pointHoverBorderColor: surface, pointHoverBorderWidth: 2,
-    }] },
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
-        tooltip: { backgroundColor: ink, padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, titleFont: { family: 'Inter', size: 11 }, callbacks: { label: (c) => ' ' + fmtMoney(c.parsed.y, currency) } },
+        legend: { display: isAll, position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'circle', font: { family: 'Inter', size: 11 }, color: inkmuted } },
+        tooltip: { backgroundColor: ink, padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, titleFont: { family: 'Inter', size: 11 }, callbacks: { label: (c) => c.parsed.y == null ? null : ` ${c.dataset.label}: ${fmtMoney(c.parsed.y, currency)}` } },
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: inkmuted } },
@@ -1420,8 +1453,8 @@ function renderPatrimonioChart() {
 
   const scopeLabel = panelState.viewMode === 'year' ? `a lo largo de ${panelState.year}` : `en ${fullMonthLabel(panelState.month)}`;
   const hasUSD = ACCOUNTS.some(a => a.currency === 'USD');
-  caption.textContent = (isAll ? `Patrimonio total ${scopeLabel}.` : `Evolución de ${acc.name} ${scopeLabel}.`)
-    + (isAll && hasUSD ? ` Las cuentas en USD se convierten a EUR a un tipo aproximado de 1 $ = ${usdToEurRate.toFixed(2)} € para el total combinado.` : '');
+  caption.textContent = (isAll ? `Cada línea es una cuenta; la discontinua es el patrimonio total, ${scopeLabel}.` : `Evolución de ${acc.name} ${scopeLabel}.`)
+    + (isAll && hasUSD ? ` Las cuentas en USD se convierten a EUR a un tipo aproximado de 1 $ = ${usdToEurRate.toFixed(2)} € para poder compararlas.` : '');
 }
 
 function renderPanelAccountsGrid() {
