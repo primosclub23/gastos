@@ -623,7 +623,7 @@ function renderReminderBanner() {
   el.querySelectorAll('[data-dismiss]').forEach(b => b.addEventListener('click', () => { state.dismissedReminders.add(parseInt(b.dataset.dismiss, 10)); renderReminderBanner(); }));
   el.querySelectorAll('[data-renew]').forEach(b => b.addEventListener('click', () => {
     const s = RECURRING.find(r => r.id === parseInt(b.dataset.renew, 10));
-    if (s) { s.endDate = null; s.reminderDays = null; regenerateAllRecurring(); buildPeriodTabs(); render(); showToast(`"${s.concept}" ahora es indefinido.`); }
+    if (s) { s.endDate = null; s.reminderDays = null; regenerateAllRecurring(); buildPeriodTabs(); render(); scheduleGhSave(); showToast(`"${s.concept}" ahora es indefinido.`); }
   }));
 }
 function maybeShowReminderPopup() {
@@ -826,9 +826,9 @@ function renderTable() {
       <td class="py-3 pr-0 text-right">${actionCell}</td>
     </tr>`;
   }).join('');
-  body.querySelectorAll('select.rowcat').forEach(sel => sel.addEventListener('change', () => { const tx = TRANSACTIONS.find(t => t.id === parseInt(sel.dataset.id, 10)); if (tx) { tx.cat = sel.value; render(); } }));
+  body.querySelectorAll('select.rowcat').forEach(sel => sel.addEventListener('change', () => { const tx = TRANSACTIONS.find(t => t.id === parseInt(sel.dataset.id, 10)); if (tx) { tx.cat = sel.value; render(); scheduleGhSave(); } }));
   body.querySelectorAll('button[data-edit]').forEach(btn => btn.addEventListener('click', () => openEditTransactionModal(parseInt(btn.dataset.edit, 10))));
-  body.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => { const idx = TRANSACTIONS.findIndex(t => t.id === parseInt(btn.dataset.del, 10)); if (idx > -1) { TRANSACTIONS.splice(idx, 1); buildPeriodTabs(); render(); } }));
+  body.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => { const idx = TRANSACTIONS.findIndex(t => t.id === parseInt(btn.dataset.del, 10)); if (idx > -1) { TRANSACTIONS.splice(idx, 1); buildPeriodTabs(); render(); scheduleGhSave(); } }));
   body.querySelectorAll('button[data-recur]').forEach(btn => btn.addEventListener('click', openRecurringModal));
 }
 
@@ -1690,7 +1690,7 @@ function deleteCategory(key) {
   showToast(`Categoría "${cat.label}" eliminada.`);
   return true;
 }
-function refreshAfterCategoryChange() { buildPeriodTabs(); render(); }
+function refreshAfterCategoryChange() { buildPeriodTabs(); render(); scheduleGhSave(); }
 
 /* =========================================================================
    12b) MODAL — panel de gestión de categorías (reordenar / editar / eliminar)
@@ -1890,7 +1890,7 @@ function openTransactionModal() {
       }
       state.viewMode = 'month'; state.month = monthKey(date); state.year = yearKey(date);
       setFilter('all', null);
-      closeModal(); buildPeriodTabs(); syncControls(); render();
+      closeModal(); buildPeriodTabs(); syncControls(); render(); scheduleGhSave();
       showToast('Movimiento añadido correctamente.');
       maybeShowReminderPopup();
     });
@@ -1967,7 +1967,7 @@ function openEditTransactionModal(id) {
       if (!confirm('¿Eliminar este movimiento?')) return;
       const idx = TRANSACTIONS.findIndex(t => t.id === id);
       if (idx > -1) TRANSACTIONS.splice(idx, 1);
-      closeModal(); buildPeriodTabs(); render();
+      closeModal(); buildPeriodTabs(); render(); scheduleGhSave();
       showToast('Movimiento eliminado.');
     });
     document.getElementById('mSave').addEventListener('click', () => {
@@ -1979,7 +1979,7 @@ function openEditTransactionModal(id) {
       tx.date = date; tx.concept = concept; tx.cat = catSel; tx.freq = freq;
       tx.amount = tipo === 'ingreso' ? amountRaw : -amountRaw;
       tx.logo = logoVal || null;
-      closeModal(); buildPeriodTabs(); syncControls(); render();
+      closeModal(); buildPeriodTabs(); syncControls(); render(); scheduleGhSave();
       showToast('Movimiento actualizado.');
     });
   }
@@ -2018,7 +2018,7 @@ function openRecurringModal() {
       const cutoffMonth = addMonths(monthKey(TODAY), -1);
       s.endDate = `${cutoffMonth}-${pad2(daysInMonth(cutoffMonth))}`;
       s.reminderDays = null;
-      regenerateAllRecurring(); buildPeriodTabs(); render(); paintList();
+      regenerateAllRecurring(); buildPeriodTabs(); render(); scheduleGhSave(); paintList();
       showToast(`"${s.concept}" se ha cancelado.`);
     }));
   }
@@ -2056,7 +2056,7 @@ function openRecurringModal() {
         if (!isNaN(amt) && amt > 0) s.amount = s.amount < 0 ? -amt : amt;
         s.endDate = endMode === 'fecha' ? endDateVal : null;
         s.reminderDays = endMode === 'fecha' ? (parseInt(reminderDaysVal, 10) || 7) : null;
-        regenerateAllRecurring(); buildPeriodTabs(); render();
+        regenerateAllRecurring(); buildPeriodTabs(); render(); scheduleGhSave();
         showToast('Movimiento recurrente actualizado.');
         maybeShowReminderPopup();
         paintList();
@@ -2164,7 +2164,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
     if (rows.length === 0) { showToast('No se pudo leer ningún movimiento válido de ese archivo.'); return; }
     rows.forEach(r => { const cat = autoCategorize(r.concept, r.amount); const freq = (CATEGORIES[cat] && (CATEGORIES[cat].group === 'fijo' || cat === 'nomina')) ? 'Fijo' : 'Variable'; TRANSACTIONS.push(mkTx(r.date, r.concept, cat, freq, r.amount, null, detectLogoDomain(r.concept))); });
     state.viewMode = 'year'; state.year = yearKey(rows[rows.length - 1].date); setFilter('all', null);
-    buildPeriodTabs(); syncControls(); render();
+    buildPeriodTabs(); syncControls(); render(); scheduleGhSave();
     showToast(`Se importaron ${rows.length} movimientos y se categorizaron automáticamente. Revisa la columna «Categoría» si algo no coincide.`);
   };
   reader.readAsText(file); e.target.value = '';
@@ -2247,7 +2247,7 @@ function showToast(msg) { const t = document.getElementById('toast'); t.textCont
 /* =========================================================================
    17) MASTER RENDER + INIT
    ========================================================================= */
-function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); renderAlerts(); renderPanel(); scheduleGhSave(); }
+function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); renderAlerts(); renderPanel(); }
 
 document.getElementById('searchInput').addEventListener('input', (e) => handleSearchInput(e.target.value));
 document.getElementById('txFilterYear').addEventListener('change', e => { state.txFilter.year = e.target.value; renderTable(); });
@@ -2356,11 +2356,11 @@ async function ghLoad() {
     ACC_SEQ = data.accSeq || ACC_SEQ;
     ALERT_SEQ = data.alertSeq || ALERT_SEQ;
     setSyncStatus('ok');
+    ghDataLoaded = true;
   } catch (e) {
     setSyncStatus('error');
-    showToast('No se pudo cargar desde GitHub: ' + e.message);
+    showToast('No se pudo cargar desde GitHub: ' + e.message + ' — no se guardará nada hasta recargar la página con éxito, para no sobrescribir tus datos reales.');
   }
-  ghDataLoaded = true;
 }
 async function ghSave() {
   const cfg = getGhConfig();
