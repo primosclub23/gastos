@@ -333,6 +333,13 @@
           </tr>
         </thead>
         <tbody id="txBody" class="divide-y divide-border/70"></tbody>
+        <tfoot id="txFoot" class="hidden">
+          <tr class="border-t-2 border-border">
+            <td colspan="4" class="py-3 pr-4 text-xs uppercase tracking-wide text-inkmuted font-medium">Total</td>
+            <td class="money py-3 pr-4 text-right font-mono text-sm font-semibold text-ink" id="txFootTotal"></td>
+            <td class="py-3 pr-0"></td>
+          </tr>
+        </tfoot>
       </table>
       <p id="emptyState" class="hidden text-center text-inkmuted text-sm py-10 font-mono">Todavía no hay movimientos aquí. Añade el primero con «Añadir movimiento».</p>
     </div>
@@ -823,9 +830,13 @@ function renderTable() {
   if (state.query.trim() !== '') { const q = normalize(state.query.trim()); rows = rows.filter(t => normalize(t.concept).includes(q)); }
   document.getElementById('txCount').textContent = `${rows.length} movimiento${rows.length === 1 ? '' : 's'}`;
   const totalEl = document.getElementById('txTotal');
+  const foot = document.getElementById('txFoot');
   const body = document.getElementById('txBody'), empty = document.getElementById('emptyState');
-  if (rows.length === 0) { totalEl.textContent = ''; body.innerHTML = ''; empty.classList.remove('hidden'); return; }
-  totalEl.textContent = ` · Total ${fmtEUR(rows.reduce((s, t) => s + t.amount, 0))}`;
+  if (rows.length === 0) { totalEl.textContent = ''; foot.classList.add('hidden'); body.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  const sum = rows.reduce((s, t) => s + t.amount, 0);
+  totalEl.textContent = ` · Total ${fmtEUR(sum)}`;
+  document.getElementById('txFootTotal').textContent = fmtEUR(sum);
+  foot.classList.remove('hidden');
   empty.classList.add('hidden');
   body.innerHTML = rows.map(t => {
     const dateFmt = new Date(t.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
