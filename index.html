@@ -1646,7 +1646,7 @@ function openDividendModal(existing) {
   let infoUrlVal = existing ? (existing.infoUrl || '') : '';
   function paint() {
     const asset = assets.find(a => `${a.accountId}::${a.symbol}` === selectedKey);
-    const rate = parseFloat(annualRateVal) || 0;
+    const rate = parseFlexibleAmount(annualRateVal) || 0;
     const monthlyPreview = asset ? asset.qty * rate / 12 : 0;
     card.innerHTML = `
       <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
@@ -1657,7 +1657,7 @@ function openDividendModal(existing) {
       </select>
       <p class="text-xs text-inkmuted mb-4">${asset ? `Tienes ${fmtQty(asset.qty)} ${asset.symbol} en ${asset.accountName} · valor actual ${fmtMoney(asset.value, asset.currency)}` : 'Crea primero una cuenta de Acciones o Cripto con alguna compra.'}</p>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Dividendo anual por unidad (${asset ? asset.currency : 'EUR'})</label>
-      <input id="fRate" type="number" min="0" step="0.0001" value="${annualRateVal}" placeholder="ej. 3.20" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-1.5 text-sm" ${asset ? '' : 'disabled'} />
+      <input id="fRate" type="text" inputmode="decimal" value="${annualRateVal}" placeholder="ej. 3,20 o 3.20" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-1.5 text-sm" ${asset ? '' : 'disabled'} />
       <p class="text-xs text-inkmuted mb-4">${asset && rate > 0 ? `≈ ${fmtMoney(monthlyPreview, asset.currency)}/mes con tu saldo actual (${fmtMoney(asset.qty * rate, asset.currency)}/año)` : 'Cuánto reparte por unidad al año — consulta la web oficial del fondo.'}</p>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Enlace a la web del activo (opcional)</label>
       <input id="fUrl" type="url" value="${infoUrlVal}" placeholder="https://neosfunds.com/btci/" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
@@ -1679,7 +1679,7 @@ function openDividendModal(existing) {
       showToast('Activo eliminado de Dividendos.');
     });
     if (asset) document.getElementById('mSave').addEventListener('click', () => {
-      const rateNum = parseFloat(document.getElementById('fRate').value);
+      const rateNum = parseFlexibleAmount(document.getElementById('fRate').value);
       if (isNaN(rateNum) || rateNum < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
       const url = document.getElementById('fUrl').value.trim();
       if (existing) {
