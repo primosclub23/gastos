@@ -544,7 +544,7 @@ let ALERT_SEQ = 0;
 function mkAlert(title, dayOfMonth) { return { id: ++ALERT_SEQ, title, dayOfMonth, active: true }; }
 let DIVIDENDS = [];     // configuración de ingresos pasivos por activo (dividendo anual/unidad, enlace a la web del fondo…)
 let DIV_SEQ = 0;
-function mkDividend(accountId, symbol, annualRate, infoUrl) { return { id: ++DIV_SEQ, accountId, symbol, annualRate, infoUrl: infoUrl || null, updatedAt: TODAY }; }
+function mkDividend(accountId, symbol, annualYieldPct, infoUrl) { return { id: ++DIV_SEQ, accountId, symbol, annualYieldPct, infoUrl: infoUrl || null, updatedAt: TODAY }; }
 function getPendingAlerts() {
   const day = parseInt(TODAY.split('-')[2], 10);
   const mKey = monthKey(TODAY);
@@ -1592,8 +1592,8 @@ function dividendEstimate(d) {
   const currency = asset ? asset.currency : (acc ? (acc.currency || 'EUR') : 'EUR');
   const qty = asset ? asset.qty : 0;
   const value = asset ? asset.value : 0;
-  const rate = d.annualRate || 0;
-  return { qty, value, currency, accountName: asset ? asset.accountName : (acc ? acc.name : '(cuenta eliminada)'), monthly: qty * rate / 12, annual: qty * rate };
+  const annual = value * (d.annualYieldPct || 0) / 100;
+  return { qty, value, currency, accountName: asset ? asset.accountName : (acc ? acc.name : '(cuenta eliminada)'), monthly: annual / 12, annual };
 }
 function totalMonthlyPassiveIncomeEUR() { return DIVIDENDS.reduce((s, d) => { const e = dividendEstimate(d); return s + toEUR(e.monthly, e.currency); }, 0); }
 function renderDividends() {
@@ -1606,7 +1606,7 @@ function renderDividends() {
         <span class="w-9 h-9 rounded-full bg-surfacealt flex items-center justify-center text-base shrink-0">💰</span>
         <div class="min-w-0">
           <p class="text-sm font-medium text-ink truncate">${d.symbol} <span class="text-inkmuted font-normal">· ${est.accountName}</span></p>
-          <p class="text-xs text-inkmuted truncate">${fmtQty(est.qty)} uds · valor actual ${fmtMoney(est.value, est.currency)} · ${fmtMoney(d.annualRate, est.currency)}/ud al año</p>
+          <p class="text-xs text-inkmuted truncate">${fmtQty(est.qty)} uds · valor actual ${fmtMoney(est.value, est.currency)} · ${d.annualYieldPct.toFixed(2)}% anual</p>
           ${d.infoUrl ? `<a href="${d.infoUrl}" target="_blank" rel="noopener noreferrer" class="text-xs text-inkmuted underline hover:text-ink">Ver datos oficiales →</a>` : ''}
         </div>
       </div>
@@ -1642,12 +1642,13 @@ function openDividendModal(existing) {
     assets = [{ accountId: existing.accountId, symbol: existing.symbol, accountName: acc ? acc.name : '(cuenta eliminada)', qty: 0, price: 0, value: 0, currency: acc ? (acc.currency || 'EUR') : 'EUR' }, ...assets];
   }
   let selectedKey = existing ? `${existing.accountId}::${existing.symbol}` : (assets[0] ? `${assets[0].accountId}::${assets[0].symbol}` : '');
-  let annualRateVal = existing ? String(existing.annualRate) : '';
+  let pctVal = existing ? String(existing.annualYieldPct) : '';
   let infoUrlVal = existing ? (existing.infoUrl || '') : '';
   function paint() {
     const asset = assets.find(a => `${a.accountId}::${a.symbol}` === selectedKey);
-    const rate = parseFlexibleAmount(annualRateVal) || 0;
-    const monthlyPreview = asset ? asset.qty * rate / 12 : 0;
+    const pct = parseFlexibleAmount(pctVal) || 0;
+    const annualPreview = asset ? asset.value * pct / 100 : 0;
+    const monthlyPreview = annualPreview / 12;
     card.innerHTML = `
       <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
       <h3 class="font-display text-xl mb-4" style="font-weight:560;">${existing ? 'Editar activo' : 'Conectar activo'}</h3>
@@ -1656,9 +1657,9 @@ function openDividendModal(existing) {
         ${assets.length ? assets.map(a => `<option value="${a.accountId}::${a.symbol}" ${`${a.accountId}::${a.symbol}` === selectedKey ? 'selected' : ''}>${a.symbol} — ${a.accountName}</option>`).join('') : '<option>No tienes activos disponibles en Acciones/Cripto</option>'}
       </select>
       <p class="text-xs text-inkmuted mb-4">${asset ? `Tienes ${fmtQty(asset.qty)} ${asset.symbol} en ${asset.accountName} · valor actual ${fmtMoney(asset.value, asset.currency)}` : 'Crea primero una cuenta de Acciones o Cripto con alguna compra.'}</p>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Dividendo anual por unidad (${asset ? asset.currency : 'EUR'})</label>
-      <input id="fRate" type="text" inputmode="decimal" value="${annualRateVal}" placeholder="ej. 3,20 o 3.20" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-1.5 text-sm" ${asset ? '' : 'disabled'} />
-      <p class="text-xs text-inkmuted mb-4">${asset && rate > 0 ? `≈ ${fmtMoney(monthlyPreview, asset.currency)}/mes con tu saldo actual (${fmtMoney(asset.qty * rate, asset.currency)}/año)` : 'Cuánto reparte por unidad al año — consulta la web oficial del fondo.'}</p>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">% anual del dividendo (rentabilidad / "distribution rate")</label>
+      <input id="fPct" type="text" inputmode="decimal" value="${pctVal}" placeholder="ej. 26,89" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-1.5 text-sm" ${asset ? '' : 'disabled'} />
+      <p class="text-xs text-inkmuted mb-4">${asset && pct > 0 ? `≈ ${fmtMoney(monthlyPreview, asset.currency)}/mes con tu saldo actual (${fmtMoney(annualPreview, asset.currency)}/año)` : 'El % que reparte al año — lo ves en la web oficial del fondo (ej. "Distribution Rate" o "30-Day SEC Yield").'}</p>
       <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Enlace a la web del activo (opcional)</label>
       <input id="fUrl" type="url" value="${infoUrlVal}" placeholder="https://neosfunds.com/btci/" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
       <div class="flex gap-2">
@@ -1669,7 +1670,7 @@ function openDividendModal(existing) {
     const sel = document.getElementById('fAsset');
     if (assets.length) sel.addEventListener('change', e => { selectedKey = e.target.value; paint(); });
     if (asset) {
-      document.getElementById('fRate').addEventListener('input', e => { annualRateVal = e.target.value; paint(); });
+      document.getElementById('fPct').addEventListener('input', e => { pctVal = e.target.value; paint(); });
       document.getElementById('fUrl').addEventListener('input', e => infoUrlVal = e.target.value);
     }
     if (existing) document.getElementById('mDelete').addEventListener('click', () => {
@@ -1679,14 +1680,14 @@ function openDividendModal(existing) {
       showToast('Activo eliminado de Dividendos.');
     });
     if (asset) document.getElementById('mSave').addEventListener('click', () => {
-      const rateNum = parseFlexibleAmount(document.getElementById('fRate').value);
-      if (isNaN(rateNum) || rateNum < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      const pctNum = parseFlexibleAmount(document.getElementById('fPct').value);
+      if (isNaN(pctNum) || pctNum < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
       const url = document.getElementById('fUrl').value.trim();
       if (existing) {
-        existing.accountId = asset.accountId; existing.symbol = asset.symbol; existing.annualRate = rateNum; existing.infoUrl = url || null; existing.updatedAt = TODAY;
+        existing.accountId = asset.accountId; existing.symbol = asset.symbol; existing.annualYieldPct = pctNum; existing.infoUrl = url || null; existing.updatedAt = TODAY;
         showToast('Activo actualizado.');
       } else {
-        DIVIDENDS.push(mkDividend(asset.accountId, asset.symbol, rateNum, url));
+        DIVIDENDS.push(mkDividend(asset.accountId, asset.symbol, pctNum, url));
         showToast('Activo conectado.');
       }
       closeModal(); renderDividends(); scheduleGhSave(); renderPanel();
