@@ -542,9 +542,9 @@ let RECURRING = [];     // añade aquí tus fijos (alquiler, nómina, suscripcio
 let ALERTS = [];        // recordatorios mensuales configurables (ej. "apuntar compra de acciones el día 15")
 let ALERT_SEQ = 0;
 function mkAlert(title, dayOfMonth) { return { id: ++ALERT_SEQ, title, dayOfMonth, active: true }; }
-let DIVIDENDS = [];     // ingresos pasivos cobrados (dividendos, distribuciones, intereses…)
+let DIVIDENDS = [];     // configuración de ingresos pasivos por activo (dividendo anual/unidad, enlace a la web del fondo…)
 let DIV_SEQ = 0;
-function mkDividend(date, accountId, concept, amount, currency) { return { id: ++DIV_SEQ, date, accountId: accountId || null, concept, amount, currency: currency || 'EUR' }; }
+function mkDividend(accountId, symbol, annualRate, infoUrl) { return { id: ++DIV_SEQ, accountId, symbol, annualRate, infoUrl: infoUrl || null, updatedAt: TODAY }; }
 function getPendingAlerts() {
   const day = parseInt(TODAY.split('-')[2], 10);
   const mKey = monthKey(TODAY);
@@ -1555,9 +1555,7 @@ function financialFreedomStats() {
   const avgExpenses = months.reduce((sum, m) => sum + TRANSACTIONS
     .filter(t => monthKey(t.date) === m && t.amount < 0)
     .reduce((s, t) => s + Math.abs(t.amount), 0), 0) / months.length;
-  const avgPassive = months.reduce((sum, m) => sum + DIVIDENDS
-    .filter(d => monthKey(d.date) === m)
-    .reduce((s, d) => s + toEUR(d.amount, d.currency || 'EUR'), 0), 0) / months.length;
+  const avgPassive = totalMonthlyPassiveIncomeEUR();
   const pct = avgExpenses > 0 ? (avgPassive / avgExpenses) * 100 : 0;
   return { avgExpenses, avgPassive, pct };
 }
@@ -1569,105 +1567,127 @@ function renderFinancialFreedom() {
   document.getElementById('fiPassive').textContent = fmtEUR(avgPassive);
   document.getElementById('fiExpenses').textContent = fmtEUR(avgExpenses);
   const caption = document.getElementById('fiCaption');
-  if (avgExpenses === 0) caption.textContent = 'Añade movimientos y dividendos para calcularlo.';
+  if (avgExpenses === 0) caption.textContent = 'Añade movimientos y conecta activos en Dividendos para calcularlo.';
   else if (pct >= 100) caption.textContent = '¡Tus ingresos pasivos ya cubren tus gastos mensuales! 🎉';
-  else caption.textContent = `Te faltan ${fmtEUR(avgExpenses - avgPassive)}/mes de ingresos pasivos · promedio de los últimos 3 meses`;
+  else caption.textContent = `Te faltan ${fmtEUR(avgExpenses - avgPassive)}/mes de ingresos pasivos · gastos: promedio de los últimos 3 meses`;
 }
 
 /* =========================================================================
-   11b-quater) DIVIDENDOS (ingresos pasivos)
+   11b-quater) DIVIDENDOS (ingresos pasivos por activo)
    ========================================================================= */
+function availableDividendAssets() {
+  const list = [];
+  ACCOUNTS.filter(a => LOT_ACCOUNT_TYPES.includes(a.type)).forEach(acc => {
+    accAssetGroups(acc).forEach(g => {
+      const qty = groupQty(g.lots);
+      const price = accCurrentPriceFor(acc, g.symbol);
+      list.push({ accountId: acc.id, accountName: acc.name, symbol: g.symbol, qty, price, value: qty * price, currency: acc.currency || 'EUR' });
+    });
+  });
+  return list;
+}
+function dividendEstimate(d) {
+  const asset = availableDividendAssets().find(a => a.accountId === d.accountId && a.symbol === d.symbol);
+  const acc = ACCOUNTS.find(a => a.id === d.accountId);
+  const currency = asset ? asset.currency : (acc ? (acc.currency || 'EUR') : 'EUR');
+  const qty = asset ? asset.qty : 0;
+  const value = asset ? asset.value : 0;
+  const rate = d.annualRate || 0;
+  return { qty, value, currency, accountName: asset ? asset.accountName : (acc ? acc.name : '(cuenta eliminada)'), monthly: qty * rate / 12, annual: qty * rate };
+}
+function totalMonthlyPassiveIncomeEUR() { return DIVIDENDS.reduce((s, d) => { const e = dividendEstimate(d); return s + toEUR(e.monthly, e.currency); }, 0); }
 function renderDividends() {
   const grid = document.getElementById('dividendsGrid');
-  const rows = [...DIVIDENDS].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const rows = [...DIVIDENDS].sort((a, b) => a.symbol.localeCompare(b.symbol));
   grid.innerHTML = rows.length ? rows.map(d => {
-    const acc = d.accountId ? ACCOUNTS.find(a => a.id === d.accountId) : null;
-    const dateFmt = new Date(d.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
-    return `<div class="card p-4 flex items-center justify-between">
+    const est = dividendEstimate(d);
+    return `<div class="card p-4 flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3 min-w-0">
         <span class="w-9 h-9 rounded-full bg-surfacealt flex items-center justify-center text-base shrink-0">💰</span>
         <div class="min-w-0">
-          <p class="text-sm font-medium text-ink truncate">${d.concept}</p>
-          <p class="text-xs text-inkmuted truncate">${dateFmt}${acc ? ' · ' + acc.name : ''}</p>
+          <p class="text-sm font-medium text-ink truncate">${d.symbol} <span class="text-inkmuted font-normal">· ${est.accountName}</span></p>
+          <p class="text-xs text-inkmuted truncate">${fmtQty(est.qty)} uds · valor actual ${fmtMoney(est.value, est.currency)} · ${fmtMoney(d.annualRate, est.currency)}/ud al año</p>
+          ${d.infoUrl ? `<a href="${d.infoUrl}" target="_blank" rel="noopener noreferrer" class="text-xs text-inkmuted underline hover:text-ink">Ver datos oficiales →</a>` : ''}
         </div>
       </div>
       <div class="flex items-center gap-3 shrink-0">
-        <p class="money font-mono text-sm text-good">+${fmtMoney(d.amount, d.currency)}</p>
+        <div class="text-right">
+          <p class="money font-mono text-sm text-good">+${fmtMoney(est.monthly, est.currency)}/mes</p>
+          <p class="text-[11px] text-inkmuted">${fmtMoney(est.annual, est.currency)}/año</p>
+        </div>
         <button data-editdiv="${d.id}" class="icon-btn text-inkmuted" title="Editar">✎</button>
         <button data-deldiv="${d.id}" class="icon-btn text-inkmuted hover:text-bad" title="Eliminar">✕</button>
       </div>
     </div>`;
-  }).join('') : `<div class="card p-10 text-center"><p class="text-3xl mb-2">💰</p><p class="text-sm text-ink font-medium">Todavía no tienes dividendos registrados</p><p class="text-xs text-inkmuted mt-1">Añade cada distribución que cobres (ej. de BTCI, MSTY, STRC) para calcular tu Libertad Financiera.</p></div>`;
+  }).join('') : `<div class="card p-10 text-center"><p class="text-3xl mb-2">💰</p><p class="text-sm text-ink font-medium">Todavía no tienes activos conectados</p><p class="text-xs text-inkmuted mt-1">Conecta un activo de tus cuentas (ej. BTCI, MSTY, STRC) con su dividendo anual para estimar tu ingreso pasivo mensual.</p></div>`;
   grid.querySelectorAll('[data-editdiv]').forEach(b => b.addEventListener('click', () => openDividendModal(DIVIDENDS.find(x => x.id === parseInt(b.dataset.editdiv, 10)))));
   grid.querySelectorAll('[data-deldiv]').forEach(b => b.addEventListener('click', () => {
     const d = DIVIDENDS.find(x => x.id === parseInt(b.dataset.deldiv, 10));
     if (!d) return;
-    if (!confirm(`¿Eliminar el dividendo "${d.concept}"?`)) return;
+    if (!confirm(`¿Dejar de seguir "${d.symbol}"?`)) return;
     DIVIDENDS = DIVIDENDS.filter(x => x.id !== d.id);
     renderDividends(); scheduleGhSave(); renderPanel();
   }));
-  const yearNow = yearKey(TODAY);
-  const totalThisYear = rows.filter(d => yearKey(d.date) === yearNow).reduce((s, d) => s + toEUR(d.amount, d.currency || 'EUR'), 0);
-  const { avgPassive } = financialFreedomStats();
+  const totalMonthly = totalMonthlyPassiveIncomeEUR();
   document.getElementById('divSummary').textContent = rows.length
-    ? `Este ${yearNow} has cobrado ${fmtEUR(totalThisYear)} · promedio de los últimos 3 meses: ${fmtEUR(avgPassive)}/mes`
-    : 'Registra los ingresos pasivos que cobras: dividendos, distribuciones, intereses…';
+    ? `Ingreso pasivo estimado: ${fmtEUR(totalMonthly)}/mes (${fmtEUR(totalMonthly * 12)}/año) según tus saldos actuales`
+    : 'Conecta tus activos (ej. BTCI, MSTY, STRC) con su dividendo anual para estimar tus ingresos pasivos.';
 }
 function openDividendModal(existing) {
   const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
-  let dateVal = existing ? existing.date : TODAY;
-  let accountIdVal = existing ? (existing.accountId || '') : '';
-  let conceptVal = existing ? existing.concept : '';
-  let amountVal = existing ? String(existing.amount) : '';
-  let currencyVal = existing ? (existing.currency || 'EUR') : 'EUR';
+  const usedKeys = new Set(DIVIDENDS.filter(d => !existing || d.id !== existing.id).map(d => `${d.accountId}::${d.symbol}`));
+  let assets = availableDividendAssets().filter(a => !usedKeys.has(`${a.accountId}::${a.symbol}`));
+  if (existing && !assets.find(a => a.accountId === existing.accountId && a.symbol === existing.symbol)) {
+    const acc = ACCOUNTS.find(a => a.id === existing.accountId);
+    assets = [{ accountId: existing.accountId, symbol: existing.symbol, accountName: acc ? acc.name : '(cuenta eliminada)', qty: 0, price: 0, value: 0, currency: acc ? (acc.currency || 'EUR') : 'EUR' }, ...assets];
+  }
+  let selectedKey = existing ? `${existing.accountId}::${existing.symbol}` : (assets[0] ? `${assets[0].accountId}::${assets[0].symbol}` : '');
+  let annualRateVal = existing ? String(existing.annualRate) : '';
+  let infoUrlVal = existing ? (existing.infoUrl || '') : '';
   function paint() {
+    const asset = assets.find(a => `${a.accountId}::${a.symbol}` === selectedKey);
+    const rate = parseFloat(annualRateVal) || 0;
+    const monthlyPreview = asset ? asset.qty * rate / 12 : 0;
     card.innerHTML = `
       <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
-      <h3 class="font-display text-xl mb-4" style="font-weight:560;">${existing ? 'Editar dividendo' : 'Añadir dividendo'}</h3>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Fecha</label>
-      <input id="fDate" type="date" value="${dateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
-      <input id="fConcept" type="text" value="${conceptVal}" placeholder="ej. MSTY distribución mensual" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Cuenta / Activo (opcional)</label>
-      <select id="fAccount" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
-        <option value="">Sin asociar</option>
-        ${ACCOUNTS.map(a => `<option value="${a.id}" ${String(a.id) === String(accountIdVal) ? 'selected' : ''}>${a.name}</option>`).join('')}
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">${existing ? 'Editar activo' : 'Conectar activo'}</h3>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Activo</label>
+      <select id="fAsset" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-1.5 text-sm bg-surface" ${assets.length ? '' : 'disabled'}>
+        ${assets.length ? assets.map(a => `<option value="${a.accountId}::${a.symbol}" ${`${a.accountId}::${a.symbol}` === selectedKey ? 'selected' : ''}>${a.symbol} — ${a.accountName}</option>`).join('') : '<option>No tienes activos disponibles en Acciones/Cripto</option>'}
       </select>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
-      <div class="flex gap-2 mt-1.5 mb-4">
-        <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
-        <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
-      </div>
-      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Importe cobrado</label>
-      <input id="fAmount" type="number" min="0.01" step="0.01" value="${amountVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+      <p class="text-xs text-inkmuted mb-4">${asset ? `Tienes ${fmtQty(asset.qty)} ${asset.symbol} en ${asset.accountName} · valor actual ${fmtMoney(asset.value, asset.currency)}` : 'Crea primero una cuenta de Acciones o Cripto con alguna compra.'}</p>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Dividendo anual por unidad (${asset ? asset.currency : 'EUR'})</label>
+      <input id="fRate" type="number" min="0" step="0.0001" value="${annualRateVal}" placeholder="ej. 3.20" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-1.5 text-sm" ${asset ? '' : 'disabled'} />
+      <p class="text-xs text-inkmuted mb-4">${asset && rate > 0 ? `≈ ${fmtMoney(monthlyPreview, asset.currency)}/mes con tu saldo actual (${fmtMoney(asset.qty * rate, asset.currency)}/año)` : 'Cuánto reparte por unidad al año — consulta la web oficial del fondo.'}</p>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Enlace a la web del activo (opcional)</label>
+      <input id="fUrl" type="url" value="${infoUrlVal}" placeholder="https://neosfunds.com/btci/" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
       <div class="flex gap-2">
         ${existing ? `<button id="mDelete" class="btn-outline flex-1 rounded-full py-2.5 text-sm font-medium" style="color:#B15D4A; border-color:#B15D4A;">Eliminar</button>` : ''}
-        <button id="mSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium">${existing ? 'Guardar cambios' : 'Añadir dividendo'}</button>
+        <button id="mSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium" ${asset ? '' : 'disabled'}>${existing ? 'Guardar cambios' : 'Conectar activo'}</button>
       </div>`;
     document.getElementById('mClose').addEventListener('click', closeModal);
-    document.getElementById('fDate').addEventListener('input', e => dateVal = e.target.value);
-    document.getElementById('fConcept').addEventListener('input', e => conceptVal = e.target.value);
-    document.getElementById('fAccount').addEventListener('change', e => accountIdVal = e.target.value);
-    card.querySelectorAll('[data-currency]').forEach(b => b.addEventListener('click', () => { currencyVal = b.dataset.currency; paint(); }));
-    document.getElementById('fAmount').addEventListener('input', e => amountVal = e.target.value);
+    const sel = document.getElementById('fAsset');
+    if (assets.length) sel.addEventListener('change', e => { selectedKey = e.target.value; paint(); });
+    if (asset) {
+      document.getElementById('fRate').addEventListener('input', e => { annualRateVal = e.target.value; paint(); });
+      document.getElementById('fUrl').addEventListener('input', e => infoUrlVal = e.target.value);
+    }
     if (existing) document.getElementById('mDelete').addEventListener('click', () => {
-      if (!confirm(`¿Eliminar el dividendo "${existing.concept}"?`)) return;
+      if (!confirm(`¿Dejar de seguir "${existing.symbol}"?`)) return;
       DIVIDENDS = DIVIDENDS.filter(d => d.id !== existing.id);
       closeModal(); renderDividends(); scheduleGhSave(); renderPanel();
-      showToast('Dividendo eliminado.');
+      showToast('Activo eliminado de Dividendos.');
     });
-    document.getElementById('mSave').addEventListener('click', () => {
-      const date = document.getElementById('fDate').value;
-      const concept = document.getElementById('fConcept').value.trim();
-      const amount = parseFloat(document.getElementById('fAmount').value);
-      if (!date || !concept || isNaN(amount) || amount <= 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
-      const accountId = accountIdVal ? parseInt(accountIdVal, 10) : null;
+    if (asset) document.getElementById('mSave').addEventListener('click', () => {
+      const rateNum = parseFloat(document.getElementById('fRate').value);
+      if (isNaN(rateNum) || rateNum < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      const url = document.getElementById('fUrl').value.trim();
       if (existing) {
-        existing.date = date; existing.concept = concept; existing.amount = amount; existing.currency = currencyVal; existing.accountId = accountId;
-        showToast('Dividendo actualizado.');
+        existing.accountId = asset.accountId; existing.symbol = asset.symbol; existing.annualRate = rateNum; existing.infoUrl = url || null; existing.updatedAt = TODAY;
+        showToast('Activo actualizado.');
       } else {
-        DIVIDENDS.push(mkDividend(date, accountId, concept, amount, currencyVal));
-        showToast('Dividendo añadido.');
+        DIVIDENDS.push(mkDividend(asset.accountId, asset.symbol, rateNum, url));
+        showToast('Activo conectado.');
       }
       closeModal(); renderDividends(); scheduleGhSave(); renderPanel();
     });
