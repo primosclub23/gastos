@@ -126,6 +126,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
         Cuentas
       </a>
+      <a href="#dividendos-section" data-nav="dividendos" class="nav-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5a2.5 2.5 0 0 1 2.5-2.5h1a2.25 2.25 0 0 1 0 4.5h-1a2.25 2.25 0 0 0 0 4.5h1a2.5 2.5 0 0 0 2.5-2.5"/></svg>
+        Dividendos
+      </a>
       <a href="#alertas-section" data-nav="alertas" class="nav-item">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         Alertas
@@ -212,6 +216,22 @@
     </div>
     <div id="pnlContent">
       <div class="card p-6 sm:p-8 mb-6">
+        <div class="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <p class="text-xs uppercase tracking-widest text-inkmuted font-mono mb-1.5">Libertad Financiera</p>
+            <p class="text-xs text-inkmuted" id="fiCaption">Añade movimientos y dividendos para calcularlo.</p>
+          </div>
+          <p class="money font-display text-3xl text-ink shrink-0" id="fiPercent" style="font-weight:500;">0%</p>
+        </div>
+        <div class="w-full h-3 rounded-full bg-surfacealt overflow-hidden mb-4">
+          <div id="fiBar" class="h-full rounded-full" style="width:0%; background:#D97757; transition:width .5s ease;"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div><p class="text-xs text-inkmuted">Ingresos pasivos / mes</p><p class="money font-mono text-sm text-ink mt-0.5" id="fiPassive">0,00 €</p></div>
+          <div><p class="text-xs text-inkmuted">Gastos / mes</p><p class="money font-mono text-sm text-ink mt-0.5" id="fiExpenses">0,00 €</p></div>
+        </div>
+      </div>
+      <div class="card p-6 sm:p-8 mb-6">
         <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-6">
           <div>
             <p class="text-xs uppercase tracking-widest text-inkmuted font-mono mb-1.5" id="pnlSubtitle">Patrimonio Total</p>
@@ -276,6 +296,21 @@
       <p class="text-xs text-inkmuted mt-1">Ver y administrar tus cuentas — saldo manual</p>
     </div>
     <div id="accountsGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-5"></div>
+  </section>
+
+  <!-- ============ DIVIDENDOS (ingresos pasivos) ============ -->
+  <section id="dividendos-section" class="hidden mb-8">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="font-display text-lg text-ink" style="font-weight:560;">Dividendos</h2>
+        <p class="text-xs text-inkmuted mt-1" id="divSummary">Registra los ingresos pasivos que cobras: dividendos, distribuciones, intereses…</p>
+      </div>
+      <button id="btnAddDividend" class="btn-primary rounded-full px-4 py-2 text-sm font-medium flex items-center gap-1.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Añadir dividendo
+      </button>
+    </div>
+    <div id="dividendsGrid" class="space-y-3"></div>
   </section>
 
   <!-- ============ ALERTAS ============ -->
@@ -507,6 +542,9 @@ let RECURRING = [];     // añade aquí tus fijos (alquiler, nómina, suscripcio
 let ALERTS = [];        // recordatorios mensuales configurables (ej. "apuntar compra de acciones el día 15")
 let ALERT_SEQ = 0;
 function mkAlert(title, dayOfMonth) { return { id: ++ALERT_SEQ, title, dayOfMonth, active: true }; }
+let DIVIDENDS = [];     // ingresos pasivos cobrados (dividendos, distribuciones, intereses…)
+let DIV_SEQ = 0;
+function mkDividend(date, accountId, concept, amount, currency) { return { id: ++DIV_SEQ, date, accountId: accountId || null, concept, amount, currency: currency || 'EUR' }; }
 function getPendingAlerts() {
   const day = parseInt(TODAY.split('-')[2], 10);
   const mKey = monthKey(TODAY);
@@ -1505,8 +1543,138 @@ function renderPanel() {
   buildPanelPeriodTabs();
   renderPatrimonioHero();
   renderPanelAccountsGrid();
+  renderFinancialFreedom();
   if (!document.getElementById('panel-section').classList.contains('hidden')) renderPatrimonioChart();
 }
+
+/* =========================================================================
+   11b-ter) LIBERTAD FINANCIERA (ingresos pasivos vs. gastos mensuales)
+   ========================================================================= */
+function financialFreedomStats() {
+  const months = [1, 2, 3].map(n => addMonths(monthKey(TODAY), -n));
+  const avgExpenses = months.reduce((sum, m) => sum + TRANSACTIONS
+    .filter(t => monthKey(t.date) === m && t.amount < 0)
+    .reduce((s, t) => s + Math.abs(t.amount), 0), 0) / months.length;
+  const avgPassive = months.reduce((sum, m) => sum + DIVIDENDS
+    .filter(d => monthKey(d.date) === m)
+    .reduce((s, d) => s + toEUR(d.amount, d.currency || 'EUR'), 0), 0) / months.length;
+  const pct = avgExpenses > 0 ? (avgPassive / avgExpenses) * 100 : 0;
+  return { avgExpenses, avgPassive, pct };
+}
+function renderFinancialFreedom() {
+  const { avgExpenses, avgPassive, pct } = financialFreedomStats();
+  document.getElementById('fiPercent').textContent = `${pct.toFixed(0)}%`;
+  document.getElementById('fiBar').style.width = Math.max(0, Math.min(100, pct)) + '%';
+  document.getElementById('fiBar').style.background = pct >= 100 ? themeVar('--color-good') : '#D97757';
+  document.getElementById('fiPassive').textContent = fmtEUR(avgPassive);
+  document.getElementById('fiExpenses').textContent = fmtEUR(avgExpenses);
+  const caption = document.getElementById('fiCaption');
+  if (avgExpenses === 0) caption.textContent = 'Añade movimientos y dividendos para calcularlo.';
+  else if (pct >= 100) caption.textContent = '¡Tus ingresos pasivos ya cubren tus gastos mensuales! 🎉';
+  else caption.textContent = `Te faltan ${fmtEUR(avgExpenses - avgPassive)}/mes de ingresos pasivos · promedio de los últimos 3 meses`;
+}
+
+/* =========================================================================
+   11b-quater) DIVIDENDOS (ingresos pasivos)
+   ========================================================================= */
+function renderDividends() {
+  const grid = document.getElementById('dividendsGrid');
+  const rows = [...DIVIDENDS].sort((a, b) => new Date(b.date) - new Date(a.date));
+  grid.innerHTML = rows.length ? rows.map(d => {
+    const acc = d.accountId ? ACCOUNTS.find(a => a.id === d.accountId) : null;
+    const dateFmt = new Date(d.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+    return `<div class="card p-4 flex items-center justify-between">
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="w-9 h-9 rounded-full bg-surfacealt flex items-center justify-center text-base shrink-0">💰</span>
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-ink truncate">${d.concept}</p>
+          <p class="text-xs text-inkmuted truncate">${dateFmt}${acc ? ' · ' + acc.name : ''}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 shrink-0">
+        <p class="money font-mono text-sm text-good">+${fmtMoney(d.amount, d.currency)}</p>
+        <button data-editdiv="${d.id}" class="icon-btn text-inkmuted" title="Editar">✎</button>
+        <button data-deldiv="${d.id}" class="icon-btn text-inkmuted hover:text-bad" title="Eliminar">✕</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="card p-10 text-center"><p class="text-3xl mb-2">💰</p><p class="text-sm text-ink font-medium">Todavía no tienes dividendos registrados</p><p class="text-xs text-inkmuted mt-1">Añade cada distribución que cobres (ej. de BTCI, MSTY, STRC) para calcular tu Libertad Financiera.</p></div>`;
+  grid.querySelectorAll('[data-editdiv]').forEach(b => b.addEventListener('click', () => openDividendModal(DIVIDENDS.find(x => x.id === parseInt(b.dataset.editdiv, 10)))));
+  grid.querySelectorAll('[data-deldiv]').forEach(b => b.addEventListener('click', () => {
+    const d = DIVIDENDS.find(x => x.id === parseInt(b.dataset.deldiv, 10));
+    if (!d) return;
+    if (!confirm(`¿Eliminar el dividendo "${d.concept}"?`)) return;
+    DIVIDENDS = DIVIDENDS.filter(x => x.id !== d.id);
+    renderDividends(); scheduleGhSave(); renderPanel();
+  }));
+  const yearNow = yearKey(TODAY);
+  const totalThisYear = rows.filter(d => yearKey(d.date) === yearNow).reduce((s, d) => s + toEUR(d.amount, d.currency || 'EUR'), 0);
+  const { avgPassive } = financialFreedomStats();
+  document.getElementById('divSummary').textContent = rows.length
+    ? `Este ${yearNow} has cobrado ${fmtEUR(totalThisYear)} · promedio de los últimos 3 meses: ${fmtEUR(avgPassive)}/mes`
+    : 'Registra los ingresos pasivos que cobras: dividendos, distribuciones, intereses…';
+}
+function openDividendModal(existing) {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let dateVal = existing ? existing.date : TODAY;
+  let accountIdVal = existing ? (existing.accountId || '') : '';
+  let conceptVal = existing ? existing.concept : '';
+  let amountVal = existing ? String(existing.amount) : '';
+  let currencyVal = existing ? (existing.currency || 'EUR') : 'EUR';
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">${existing ? 'Editar dividendo' : 'Añadir dividendo'}</h3>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Fecha</label>
+      <input id="fDate" type="date" value="${dateVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Concepto</label>
+      <input id="fConcept" type="text" value="${conceptVal}" placeholder="ej. MSTY distribución mensual" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Cuenta / Activo (opcional)</label>
+      <select id="fAccount" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm bg-surface">
+        <option value="">Sin asociar</option>
+        ${ACCOUNTS.map(a => `<option value="${a.id}" ${String(a.id) === String(accountIdVal) ? 'selected' : ''}>${a.name}</option>`).join('')}
+      </select>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Moneda</label>
+      <div class="flex gap-2 mt-1.5 mb-4">
+        <button type="button" data-currency="EUR" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'EUR' ? 'active' : ''}">€ Euro</button>
+        <button type="button" data-currency="USD" class="toggle-btn flex-1 rounded-full py-2 text-sm font-medium border border-border ${currencyVal === 'USD' ? 'active' : ''}">$ Dólar</button>
+      </div>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Importe cobrado</label>
+      <input id="fAmount" type="number" min="0.01" step="0.01" value="${amountVal}" placeholder="0.00" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+      <div class="flex gap-2">
+        ${existing ? `<button id="mDelete" class="btn-outline flex-1 rounded-full py-2.5 text-sm font-medium" style="color:#B15D4A; border-color:#B15D4A;">Eliminar</button>` : ''}
+        <button id="mSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium">${existing ? 'Guardar cambios' : 'Añadir dividendo'}</button>
+      </div>`;
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('fDate').addEventListener('input', e => dateVal = e.target.value);
+    document.getElementById('fConcept').addEventListener('input', e => conceptVal = e.target.value);
+    document.getElementById('fAccount').addEventListener('change', e => accountIdVal = e.target.value);
+    card.querySelectorAll('[data-currency]').forEach(b => b.addEventListener('click', () => { currencyVal = b.dataset.currency; paint(); }));
+    document.getElementById('fAmount').addEventListener('input', e => amountVal = e.target.value);
+    if (existing) document.getElementById('mDelete').addEventListener('click', () => {
+      if (!confirm(`¿Eliminar el dividendo "${existing.concept}"?`)) return;
+      DIVIDENDS = DIVIDENDS.filter(d => d.id !== existing.id);
+      closeModal(); renderDividends(); scheduleGhSave(); renderPanel();
+      showToast('Dividendo eliminado.');
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const date = document.getElementById('fDate').value;
+      const concept = document.getElementById('fConcept').value.trim();
+      const amount = parseFloat(document.getElementById('fAmount').value);
+      if (!date || !concept || isNaN(amount) || amount <= 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      const accountId = accountIdVal ? parseInt(accountIdVal, 10) : null;
+      if (existing) {
+        existing.date = date; existing.concept = concept; existing.amount = amount; existing.currency = currencyVal; existing.accountId = accountId;
+        showToast('Dividendo actualizado.');
+      } else {
+        DIVIDENDS.push(mkDividend(date, accountId, concept, amount, currencyVal));
+        showToast('Dividendo añadido.');
+      }
+      closeModal(); renderDividends(); scheduleGhSave(); renderPanel();
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+document.getElementById('btnAddDividend').addEventListener('click', () => openDividendModal(null));
 
 /* =========================================================================
    11c) ALERTAS (recordatorios mensuales configurables)
@@ -2207,7 +2375,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
    16) EXPORTAR / RESTAURAR DATOS (copia de seguridad completa en JSON)
    ========================================================================= */
 function exportData() {
-  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ };
+  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, dividends: DIVIDENDS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ, divSeq: DIV_SEQ };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2228,11 +2396,13 @@ function tryRestoreFromJSON(rawText) {
     RECURRING = data.recurring.map(s => ({ ...s }));
     ACCOUNTS = Array.isArray(data.accounts) ? data.accounts.map(a => ({ ...a })) : [];
     ALERTS = Array.isArray(data.alerts) ? data.alerts.map(a => ({ ...a })) : [];
+    DIVIDENDS = Array.isArray(data.dividends) ? data.dividends.map(d => ({ ...d })) : [];
     TX_SEQ = data.txSeq || Math.max(0, ...TRANSACTIONS.map(t => t.id || 0), 0);
     REC_SEQ = data.recSeq || Math.max(0, ...RECURRING.map(s => s.id || 0), 0);
     ORDER_SEQ = data.orderSeq || Math.max(100, ...Object.values(CATEGORIES).map(c => c.order || 0));
     ACC_SEQ = data.accSeq || Math.max(0, ...ACCOUNTS.map(a => a.id || 0), 0);
     ALERT_SEQ = data.alertSeq || Math.max(0, ...ALERTS.map(a => a.id || 0), 0);
+    DIV_SEQ = data.divSeq || Math.max(0, ...DIVIDENDS.map(d => d.id || 0), 0);
     regenerateAllRecurring();
     setFilter('all', null);
     buildPeriodTabs(); syncControls(); render();
@@ -2280,7 +2450,7 @@ function showToast(msg) { const t = document.getElementById('toast'); t.textCont
 /* =========================================================================
    17) MASTER RENDER + INIT
    ========================================================================= */
-function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); renderAlerts(); renderPanel(); }
+function render() { syncControls(); renderReminderBanner(); renderKPIs(); renderDoughnut(); renderBar(); renderTable(); renderAccounts(); renderDividends(); renderAlerts(); renderPanel(); }
 
 document.getElementById('searchInput').addEventListener('input', (e) => handleSearchInput(e.target.value));
 document.getElementById('txFilterYear').addEventListener('change', e => { state.txFilter.year = e.target.value; renderTable(); });
@@ -2292,7 +2462,7 @@ document.getElementById('btnAddTx').addEventListener('click', () => openTransact
 /* =========================================================================
    16b) SIDEBAR — navegación por vistas, menú de perfil, modo oscuro, modo privado
    ========================================================================= */
-const VIEW_SECTIONS = { panel: 'panel-section', gastos: 'gastos-section', cuentas: 'cuentas-section', transacciones: 'transacciones-section', alertas: 'alertas-section' };
+const VIEW_SECTIONS = { panel: 'panel-section', gastos: 'gastos-section', cuentas: 'cuentas-section', transacciones: 'transacciones-section', dividendos: 'dividendos-section', alertas: 'alertas-section' };
 function showView(name) {
   Object.entries(VIEW_SECTIONS).forEach(([key, id]) => document.getElementById(id).classList.toggle('hidden', key !== name));
   document.getElementById('btnAddTx').classList.toggle('hidden', name === 'cuentas');
@@ -2383,11 +2553,13 @@ async function ghLoad() {
     if (data && Array.isArray(data.recurring)) RECURRING = data.recurring.map(s => ({ ...s }));
     if (data && Array.isArray(data.accounts)) ACCOUNTS = data.accounts.map(a => ({ ...a }));
     if (data && Array.isArray(data.alerts)) ALERTS = data.alerts.map(a => ({ ...a }));
+    if (data && Array.isArray(data.dividends)) DIVIDENDS = data.dividends.map(d => ({ ...d }));
     TX_SEQ = data.txSeq || TX_SEQ;
     REC_SEQ = data.recSeq || REC_SEQ;
     ORDER_SEQ = data.orderSeq || ORDER_SEQ;
     ACC_SEQ = data.accSeq || ACC_SEQ;
     ALERT_SEQ = data.alertSeq || ALERT_SEQ;
+    DIV_SEQ = data.divSeq || DIV_SEQ;
     setSyncStatus('ok');
     ghDataLoaded = true;
   } catch (e) {
@@ -2399,7 +2571,7 @@ async function ghSave() {
   const cfg = getGhConfig();
   if (!cfg || !cfg.token || !cfg.owner || !cfg.repo) return;
   setSyncStatus('guardando');
-  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ };
+  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, dividends: DIVIDENDS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ, divSeq: DIV_SEQ };
   const body = { message: 'Actualización automática · ' + new Date().toISOString(), content: utf8ToB64(JSON.stringify(payload, null, 2)), branch: cfg.branch || 'main' };
   if (ghFileSha) body.sha = ghFileSha;
   try {
