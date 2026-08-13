@@ -179,7 +179,7 @@
   <!-- ============ HEADER ============ -->
   <header class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
     <div>
-      <p class="font-mono text-xs uppercase tracking-widest text-inkmuted mb-2">Hoy · 5 de julio de 2026</p>
+      <p class="font-mono text-xs uppercase tracking-widest text-inkmuted mb-2" id="todayLabel">Hoy</p>
       <div class="flex items-center gap-3 lg:hidden">
         <img src="logo-numo.png.png" alt="Numo" class="w-12 h-12 rounded-full object-cover shrink-0">
       </div>
@@ -228,7 +228,7 @@
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div><p class="text-xs text-inkmuted">Ingresos pasivos / mes</p><p class="money font-mono text-sm text-ink mt-0.5" id="fiPassive">0,00 €</p></div>
-          <div><p class="text-xs text-inkmuted">Gastos / mes</p><p class="money font-mono text-sm text-ink mt-0.5" id="fiExpenses">0,00 €</p></div>
+          <div><p class="text-xs text-inkmuted">Gastos Fijos / mes</p><p class="money font-mono text-sm text-ink mt-0.5" id="fiExpenses">0,00 €</p></div>
         </div>
       </div>
       <div class="card p-6 sm:p-8 mb-6">
@@ -411,7 +411,7 @@ const ACCOUNT_COLOR_SWATCHES = ['#E3B341','#D64545','#E8804C','#1F1F1F','#3B6FA6
 /* =========================================================================
    2) DATES / HELPERS
    ========================================================================= */
-const TODAY = '2026-07-05';
+const TODAY = '2026-08-13';
 const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
 function normalize(str) { return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
@@ -697,7 +697,8 @@ function renderKPIs() {
   const prevList = txForPreviousPeriod();
   const t = totals(list);
   const prevT = prevList ? totals(prevList) : null;
-  const inProgressNote = (state.viewMode === 'month' && state.month === monthKey(TODAY)) ? 'Mes en curso · hasta el 5 de julio' : `vs. ${state.viewMode==='month'?'mes':'año'} anterior`;
+  const todayLabel = new Date(TODAY).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+  const inProgressNote = (state.viewMode === 'month' && state.month === monthKey(TODAY)) ? `Mes en curso · hasta el ${todayLabel}` : `vs. ${state.viewMode==='month'?'mes':'año'} anterior`;
 
   const fijosTotal = list.filter(t => t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'fijo').reduce((s, t) => s + Math.abs(t.amount), 0);
   const variablesTotal = list.filter(t => t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'variable').reduce((s, t) => s + Math.abs(t.amount), 0);
@@ -1559,25 +1560,26 @@ function renderPanel() {
    11b-ter) LIBERTAD FINANCIERA (ingresos pasivos vs. gastos mensuales)
    ========================================================================= */
 function financialFreedomStats() {
-  const months = [1, 2, 3].map(n => addMonths(monthKey(TODAY), -n));
-  const avgExpenses = months.reduce((sum, m) => sum + TRANSACTIONS
-    .filter(t => monthKey(t.date) === m && t.amount < 0)
-    .reduce((s, t) => s + Math.abs(t.amount), 0), 0) / months.length;
+  const lastClosedMonth = addMonths(monthKey(TODAY), -1);
+  const fixedExpenses = TRANSACTIONS
+    .filter(t => monthKey(t.date) === lastClosedMonth && t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'fijo')
+    .reduce((s, t) => s + Math.abs(t.amount), 0);
   const avgPassive = totalMonthlyPassiveIncomeEUR();
-  const pct = avgExpenses > 0 ? (avgPassive / avgExpenses) * 100 : 0;
-  return { avgExpenses, avgPassive, pct };
+  const pct = fixedExpenses > 0 ? (avgPassive / fixedExpenses) * 100 : 0;
+  return { avgExpenses: fixedExpenses, avgPassive, pct, month: lastClosedMonth };
 }
 function renderFinancialFreedom() {
-  const { avgExpenses, avgPassive, pct } = financialFreedomStats();
+  const { avgExpenses, avgPassive, pct, month } = financialFreedomStats();
   document.getElementById('fiPercent').textContent = `${pct.toFixed(0)}%`;
   document.getElementById('fiBar').style.width = Math.max(0, Math.min(100, pct)) + '%';
   document.getElementById('fiBar').style.background = pct >= 100 ? themeVar('--color-good') : '#D97757';
   document.getElementById('fiPassive').textContent = fmtEUR(avgPassive);
   document.getElementById('fiExpenses').textContent = fmtEUR(avgExpenses);
   const caption = document.getElementById('fiCaption');
-  if (avgExpenses === 0) caption.textContent = 'Añade movimientos y conecta activos en Dividendos para calcularlo.';
-  else if (pct >= 100) caption.textContent = '¡Tus ingresos pasivos ya cubren tus gastos mensuales! 🎉';
-  else caption.textContent = `Te faltan ${fmtEUR(avgExpenses - avgPassive)}/mes de ingresos pasivos · gastos: promedio de los últimos 3 meses`;
+  const monthLbl = fullMonthLabel(month);
+  if (avgExpenses === 0) caption.textContent = `Cierra movimientos de Gastos Fijos en ${monthLbl} y conecta activos en Dividendos para calcularlo.`;
+  else if (pct >= 100) caption.textContent = `¡Tus ingresos pasivos ya cubren tus Gastos Fijos de ${monthLbl}! 🎉`;
+  else caption.textContent = `Te faltan ${fmtEUR(avgExpenses - avgPassive)}/mes de ingresos pasivos · Gastos Fijos de ${monthLbl}`;
 }
 
 /* =========================================================================
@@ -2746,6 +2748,7 @@ function openSyncModal() {
 document.getElementById('btnSync').addEventListener('click', openSyncModal);
 
 async function initApp() {
+  document.getElementById('todayLabel').textContent = 'Hoy · ' + new Date(TODAY).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
   applyTheme();
   applyPrivacy();
   buildViewToggle();
