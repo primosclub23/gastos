@@ -310,6 +310,14 @@
         Añadir dividendo
       </button>
     </div>
+    <div class="card p-6 sm:p-8 mb-6">
+      <h3 class="font-display text-lg text-ink mb-1" style="font-weight:560;">Evolución del ingreso pasivo</h3>
+      <p class="text-xs text-inkmuted mb-4">Estimado mes a mes según lo que ibas comprando de cada activo, con el % y precio actuales.</p>
+      <div class="h-64 sm:h-72 relative">
+        <canvas id="dividendsChart"></canvas>
+        <p id="divChartEmpty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-inkmuted italic text-center px-6">Conecta al menos un activo con compras registradas para ver aquí su evolución.</p>
+      </div>
+    </div>
     <div id="dividendsGrid" class="space-y-3"></div>
   </section>
 
@@ -1596,6 +1604,72 @@ function dividendEstimate(d) {
   return { qty, value, currency, accountName: asset ? asset.accountName : (acc ? acc.name : '(cuenta eliminada)'), monthly: annual / 12, annual };
 }
 function totalMonthlyPassiveIncomeEUR() { return DIVIDENDS.reduce((s, d) => { const e = dividendEstimate(d); return s + toEUR(e.monthly, e.currency); }, 0); }
+function dividendColor(d) { return PALETTE[DIVIDENDS.findIndex(x => x.id === d.id) % PALETTE.length]; }
+function qtyOfSymbolAt(acc, symbol, date) { return (acc.lots || []).filter(l => l.symbol === symbol && l.date <= date).reduce((s, l) => s + l.qty, 0); }
+function monthlyEstimateAt(d, cutoffDate) {
+  const acc = ACCOUNTS.find(a => a.id === d.accountId);
+  if (!acc) return { amount: 0, currency: 'EUR' };
+  const qty = qtyOfSymbolAt(acc, d.symbol, cutoffDate);
+  const price = accCurrentPriceFor(acc, d.symbol);
+  return { amount: qty * price * (d.annualYieldPct || 0) / 100 / 12, currency: acc.currency || 'EUR' };
+}
+function dividendsMonthsRange() {
+  const firstDates = DIVIDENDS.map(d => {
+    const acc = ACCOUNTS.find(a => a.id === d.accountId);
+    if (!acc) return null;
+    const lots = (acc.lots || []).filter(l => l.symbol === d.symbol);
+    return lots.length ? lots.reduce((min, l) => l.date < min ? l.date : min, lots[0].date) : null;
+  }).filter(Boolean);
+  if (!firstDates.length) return [];
+  let cursor = monthKey(firstDates.sort()[0]);
+  const endMonth = monthKey(TODAY);
+  const months = [];
+  while (cursor <= endMonth) { months.push(cursor); cursor = addMonths(cursor, 1); }
+  return months;
+}
+let dividendsChart;
+function renderDividendsChart() {
+  const canvas = document.getElementById('dividendsChart');
+  const emptyMsg = document.getElementById('divChartEmpty');
+  const months = dividendsMonthsRange();
+  if (!DIVIDENDS.length || !months.length) {
+    if (dividendsChart) { dividendsChart.destroy(); dividendsChart = null; }
+    canvas.classList.add('hidden'); emptyMsg.classList.remove('hidden');
+    return;
+  }
+  canvas.classList.remove('hidden'); emptyMsg.classList.add('hidden');
+  const labels = months.map(monthLabel);
+  const inkmuted = themeVar('--color-inkmuted'), border = themeVar('--color-border'), ink = themeVar('--color-ink'), surface = themeVar('--color-surface');
+  const barDatasets = DIVIDENDS.map(d => {
+    const data = months.map(m => {
+      const cutoff = m === monthKey(TODAY) ? TODAY : `${m}-31`;
+      const est = monthlyEstimateAt(d, cutoff);
+      return toEUR(est.amount, est.currency);
+    });
+    return { type: 'bar', label: d.symbol, data, backgroundColor: dividendColor(d), borderRadius: 4, maxBarThickness: 34, stack: 'divs' };
+  });
+  const totalData = months.map((m, i) => barDatasets.reduce((s, ds) => s + ds.data[i], 0));
+  const totalLine = { type: 'line', label: 'Total', data: totalData, borderColor: ink, backgroundColor: ink, borderWidth: 2.5, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: ink, pointHoverBorderColor: surface, pointHoverBorderWidth: 2, fill: false };
+  if (dividendsChart) dividendsChart.destroy();
+  const ctx = canvas.getContext('2d');
+  dividendsChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [...barDatasets, totalLine] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, font: { family: 'Inter', size: 11 }, color: inkmuted } },
+        tooltip: { backgroundColor: ink, padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, titleFont: { family: 'Inter', size: 11 }, callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtEUR(c.parsed.y)}` } },
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: inkmuted } },
+        y: { stacked: true, grid: { color: border }, ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: inkmuted, callback: (v) => fmtCompact(v) + '€' } },
+      },
+      interaction: { intersect: false, mode: 'index' },
+      animation: { duration: 450, easing: 'easeOutQuart' },
+    },
+  });
+}
 function renderDividends() {
   const grid = document.getElementById('dividendsGrid');
   const rows = [...DIVIDENDS].sort((a, b) => a.symbol.localeCompare(b.symbol));
@@ -1632,6 +1706,7 @@ function renderDividends() {
   document.getElementById('divSummary').textContent = rows.length
     ? `Ingreso pasivo estimado: ${fmtEUR(totalMonthly)}/mes (${fmtEUR(totalMonthly * 12)}/año) según tus saldos actuales`
     : 'Conecta tus activos (ej. BTCI, MSTY, STRC) con su dividendo anual para estimar tus ingresos pasivos.';
+  if (!document.getElementById('dividendos-section').classList.contains('hidden')) renderDividendsChart();
 }
 function openDividendModal(existing) {
   const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
@@ -2489,6 +2564,7 @@ function showView(name) {
   document.getElementById('btnAddTx').classList.toggle('hidden', name === 'cuentas');
   document.getElementById('btnAddAccountHeader').classList.toggle('hidden', name !== 'cuentas');
   if (name === 'panel') renderPanel();
+  if (name === 'dividendos') renderDividendsChart();
   window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.nav-item[data-nav]').forEach(el => el.addEventListener('click', (e) => {
@@ -2512,6 +2588,7 @@ function applyTheme() {
   document.getElementById('themeLabel').textContent = state.theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
   if (doughnutChart || barChart) { renderDoughnut(); renderBar(); }
   if (patrimonioChart) renderPatrimonioChart();
+  if (dividendsChart) renderDividendsChart();
 }
 document.getElementById('btnThemeToggle').addEventListener('click', () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; applyTheme(); });
 
