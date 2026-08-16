@@ -311,12 +311,19 @@
       </button>
     </div>
     <div class="card p-6 sm:p-8 mb-6">
-      <h3 class="font-display text-lg text-ink mb-1" style="font-weight:560;">Evolución del ingreso pasivo</h3>
-      <p class="text-xs text-inkmuted mb-4">Estimado mes a mes según lo que ibas comprando de cada activo, con el % y precio actuales.</p>
+      <div class="flex items-start justify-between gap-3 mb-1">
+        <h3 class="font-display text-lg text-ink" style="font-weight:560;">Evolución del ingreso pasivo</h3>
+        <button id="btnAddReceipt" class="btn-outline rounded-full px-3.5 py-1.5 text-xs font-medium shrink-0 flex items-center gap-1.5">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Registrar cobro del mes
+        </button>
+      </div>
+      <p class="text-xs text-inkmuted mb-4" id="divChartCaption">Lo que has cobrado de verdad cada mes en dividendos.</p>
       <div class="h-64 sm:h-72 relative">
         <canvas id="dividendsChart"></canvas>
-        <p id="divChartEmpty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-inkmuted italic text-center px-6">Conecta al menos un activo con compras registradas para ver aquí su evolución.</p>
+        <p id="divChartEmpty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-inkmuted italic text-center px-6">Registra lo que cobres cada mes para ver aquí su evolución.</p>
       </div>
+      <div id="receiptsList" class="flex flex-wrap gap-2 mt-4"></div>
     </div>
     <div id="dividendsGrid" class="space-y-3"></div>
   </section>
@@ -553,6 +560,9 @@ function mkAlert(title, dayOfMonth) { return { id: ++ALERT_SEQ, title, dayOfMont
 let DIVIDENDS = [];     // configuración de ingresos pasivos por activo (dividendo anual/unidad, enlace a la web del fondo…)
 let DIV_SEQ = 0;
 function mkDividend(accountId, symbol, annualYieldPct, infoUrl) { return { id: ++DIV_SEQ, accountId, symbol, annualYieldPct, infoUrl: infoUrl || null, updatedAt: TODAY }; }
+let DIVIDEND_RECEIPTS = []; // cobros reales de dividendos, uno por mes (lo que de verdad has ingresado)
+let RECEIPT_SEQ = 0;
+function mkReceipt(month, amount) { return { id: ++RECEIPT_SEQ, month, amount }; }
 function getPendingAlerts() {
   const day = parseInt(TODAY.split('-')[2], 10);
   const mKey = monthKey(TODAY);
@@ -1564,7 +1574,7 @@ function financialFreedomStats() {
   const fixedExpenses = TRANSACTIONS
     .filter(t => monthKey(t.date) === lastClosedMonth && t.amount < 0 && CATEGORIES[t.cat] && CATEGORIES[t.cat].group === 'fijo')
     .reduce((s, t) => s + Math.abs(t.amount), 0);
-  const avgPassive = totalMonthlyPassiveIncomeEUR();
+  const avgPassive = passiveIncomeForFinancialFreedom();
   const pct = fixedExpenses > 0 ? (avgPassive / fixedExpenses) * 100 : 0;
   return { avgExpenses: fixedExpenses, avgPassive, pct, month: lastClosedMonth };
 }
@@ -1606,72 +1616,121 @@ function dividendEstimate(d) {
   return { qty, value, currency, accountName: asset ? asset.accountName : (acc ? acc.name : '(cuenta eliminada)'), monthly: annual / 12, annual };
 }
 function totalMonthlyPassiveIncomeEUR() { return DIVIDENDS.reduce((s, d) => { const e = dividendEstimate(d); return s + toEUR(e.monthly, e.currency); }, 0); }
-function dividendColor(d) { return PALETTE[DIVIDENDS.findIndex(x => x.id === d.id) % PALETTE.length]; }
-function qtyOfSymbolAt(acc, symbol, date) { return (acc.lots || []).filter(l => l.symbol === symbol && l.date <= date).reduce((s, l) => s + l.qty, 0); }
-function monthlyEstimateAt(d, cutoffDate) {
-  const acc = ACCOUNTS.find(a => a.id === d.accountId);
-  if (!acc) return { amount: 0, currency: 'EUR' };
-  const qty = qtyOfSymbolAt(acc, d.symbol, cutoffDate);
-  const price = accCurrentPriceFor(acc, d.symbol);
-  return { amount: qty * price * (d.annualYieldPct || 0) / 100 / 12, currency: acc.currency || 'EUR' };
-}
-function dividendsMonthsRange() {
-  const firstDates = DIVIDENDS.map(d => {
-    const acc = ACCOUNTS.find(a => a.id === d.accountId);
-    if (!acc) return null;
-    const lots = (acc.lots || []).filter(l => l.symbol === d.symbol);
-    return lots.length ? lots.reduce((min, l) => l.date < min ? l.date : min, lots[0].date) : null;
-  }).filter(Boolean);
-  if (!firstDates.length) return [];
-  let cursor = monthKey(firstDates.sort()[0]);
-  const endMonth = monthKey(TODAY);
-  const months = [];
-  while (cursor <= endMonth) { months.push(cursor); cursor = addMonths(cursor, 1); }
-  return months;
+function sortedReceipts() { return [...DIVIDEND_RECEIPTS].sort((a, b) => a.month.localeCompare(b.month)); }
+function passiveIncomeForFinancialFreedom() {
+  const lastClosedMonth = addMonths(monthKey(TODAY), -1);
+  const receipt = DIVIDEND_RECEIPTS.find(r => r.month === lastClosedMonth);
+  return receipt ? receipt.amount : totalMonthlyPassiveIncomeEUR();
 }
 let dividendsChart;
 function renderDividendsChart() {
   const canvas = document.getElementById('dividendsChart');
   const emptyMsg = document.getElementById('divChartEmpty');
-  const months = dividendsMonthsRange();
-  if (!DIVIDENDS.length || !months.length) {
+  const caption = document.getElementById('divChartCaption');
+  const rows = sortedReceipts();
+  if (!rows.length) {
     if (dividendsChart) { dividendsChart.destroy(); dividendsChart = null; }
     canvas.classList.add('hidden'); emptyMsg.classList.remove('hidden');
+    caption.textContent = 'Lo que has cobrado de verdad cada mes en dividendos.';
+    document.getElementById('receiptsList').innerHTML = '';
     return;
   }
   canvas.classList.remove('hidden'); emptyMsg.classList.add('hidden');
-  const labels = months.map(monthLabel);
+  const labels = rows.map(r => fullMonthLabel(r.month));
   const inkmuted = themeVar('--color-inkmuted'), border = themeVar('--color-border'), ink = themeVar('--color-ink'), surface = themeVar('--color-surface');
-  const barDatasets = DIVIDENDS.map(d => {
-    const data = months.map(m => {
-      const cutoff = m === monthKey(TODAY) ? TODAY : `${m}-31`;
-      const est = monthlyEstimateAt(d, cutoff);
-      return toEUR(est.amount, est.currency);
-    });
-    return { type: 'bar', label: d.symbol, data, backgroundColor: dividendColor(d), borderRadius: 4, maxBarThickness: 34, stack: 'divs' };
-  });
-  const totalData = months.map((m, i) => barDatasets.reduce((s, ds) => s + ds.data[i], 0));
-  const totalLine = { type: 'line', label: 'Total', data: totalData, borderColor: ink, backgroundColor: ink, borderWidth: 2.5, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: ink, pointHoverBorderColor: surface, pointHoverBorderWidth: 2, fill: false };
   if (dividendsChart) dividendsChart.destroy();
   const ctx = canvas.getContext('2d');
   dividendsChart = new Chart(ctx, {
     type: 'bar',
-    data: { labels, datasets: [...barDatasets, totalLine] },
+    data: { labels, datasets: [{
+      label: 'Dividendos cobrados', data: rows.map(r => r.amount), backgroundColor: '#D97757', borderRadius: 6, maxBarThickness: 46,
+    }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { display: true, position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, font: { family: 'Inter', size: 11 }, color: inkmuted } },
-        tooltip: { backgroundColor: ink, padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, titleFont: { family: 'Inter', size: 11 }, callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtEUR(c.parsed.y)}` } },
+        legend: { display: false },
+        tooltip: { backgroundColor: ink, padding: 10, cornerRadius: 8, bodyFont: { family: 'JetBrains Mono', size: 12 }, titleFont: { family: 'Inter', size: 11 }, callbacks: { label: (c) => ' ' + fmtEUR(c.parsed.y) } },
       },
       scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: inkmuted } },
-        y: { stacked: true, grid: { color: border }, ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: inkmuted, callback: (v) => fmtCompact(v) + '€' } },
+        x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: inkmuted } },
+        y: { grid: { color: border }, ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: inkmuted, callback: (v) => fmtCompact(v) + '€' } },
       },
-      interaction: { intersect: false, mode: 'index' },
       animation: { duration: 450, easing: 'easeOutQuart' },
     },
   });
+  const last = rows[rows.length - 1];
+  const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+  const yearNow = yearKey(TODAY);
+  const totalThisYear = rows.filter(r => yearKey(r.month) === yearNow).reduce((s, r) => s + r.amount, 0);
+  let capText = `Último mes registrado: ${fullMonthLabel(last.month)} — ${fmtEUR(last.amount)}`;
+  if (prev && prev.amount > 0) {
+    const delta = ((last.amount - prev.amount) / prev.amount) * 100;
+    capText += ` (${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% vs ${fullMonthLabel(prev.month)})`;
+  }
+  capText += ` · Total en ${yearNow}: ${fmtEUR(totalThisYear)}`;
+  caption.textContent = capText;
+
+  document.getElementById('receiptsList').innerHTML = rows.slice().reverse().map(r => `
+    <span class="chip rounded-full px-3 py-1.5 text-xs font-medium text-ink bg-surface inline-flex items-center gap-2">
+      ${fullMonthLabel(r.month)}: ${fmtEUR(r.amount)}
+      <button data-editreceipt="${r.id}" class="text-inkmuted hover:text-ink" title="Editar">✎</button>
+      <button data-delreceipt="${r.id}" class="text-inkmuted hover:text-bad" title="Eliminar">✕</button>
+    </span>`).join('');
+  document.querySelectorAll('[data-editreceipt]').forEach(b => b.addEventListener('click', () => openDividendReceiptModal(DIVIDEND_RECEIPTS.find(x => x.id === parseInt(b.dataset.editreceipt, 10)))));
+  document.querySelectorAll('[data-delreceipt]').forEach(b => b.addEventListener('click', () => {
+    const r = DIVIDEND_RECEIPTS.find(x => x.id === parseInt(b.dataset.delreceipt, 10));
+    if (!r) return;
+    if (!confirm(`¿Eliminar el cobro de ${fullMonthLabel(r.month)}?`)) return;
+    DIVIDEND_RECEIPTS = DIVIDEND_RECEIPTS.filter(x => x.id !== r.id);
+    renderDividendsChart(); scheduleGhSave(); renderPanel();
+  }));
 }
+function openDividendReceiptModal(existing) {
+  const backdrop = document.getElementById('modalBackdrop'), card = document.getElementById('modalCard');
+  let monthVal = existing ? existing.month : addMonths(monthKey(TODAY), -1);
+  let amountVal = existing ? String(existing.amount) : '';
+  function paint() {
+    card.innerHTML = `
+      <button id="mClose" class="absolute top-4 right-4 text-inkmuted hover:text-ink">✕</button>
+      <h3 class="font-display text-xl mb-4" style="font-weight:560;">${existing ? 'Editar cobro' : 'Registrar cobro del mes'}</h3>
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Mes</label>
+      <input id="fMonth" type="month" value="${monthVal}" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-4 text-sm" />
+      <label class="text-xs uppercase tracking-wide text-inkmuted font-medium">Total cobrado en dividendos ese mes (€)</label>
+      <input id="fAmount" type="text" inputmode="decimal" value="${amountVal}" placeholder="ej. 540 o 540,25" class="focus-ring w-full rounded-lg border border-border px-3 py-2 mt-1.5 mb-5 text-sm" />
+      <div class="flex gap-2">
+        ${existing ? `<button id="mDelete" class="btn-outline flex-1 rounded-full py-2.5 text-sm font-medium" style="color:#B15D4A; border-color:#B15D4A;">Eliminar</button>` : ''}
+        <button id="mSave" class="btn-primary flex-1 rounded-full py-2.5 text-sm font-medium">${existing ? 'Guardar cambios' : 'Registrar cobro'}</button>
+      </div>`;
+    document.getElementById('mClose').addEventListener('click', closeModal);
+    document.getElementById('fMonth').addEventListener('input', e => monthVal = e.target.value);
+    document.getElementById('fAmount').addEventListener('input', e => amountVal = e.target.value);
+    if (existing) document.getElementById('mDelete').addEventListener('click', () => {
+      if (!confirm(`¿Eliminar el cobro de ${fullMonthLabel(existing.month)}?`)) return;
+      DIVIDEND_RECEIPTS = DIVIDEND_RECEIPTS.filter(r => r.id !== existing.id);
+      closeModal(); renderDividendsChart(); scheduleGhSave(); renderPanel();
+      showToast('Cobro eliminado.');
+    });
+    document.getElementById('mSave').addEventListener('click', () => {
+      const month = document.getElementById('fMonth').value;
+      const amount = parseFlexibleAmount(document.getElementById('fAmount').value);
+      if (!month || isNaN(amount) || amount < 0) { document.getElementById('mSave').classList.add('ring-2', 'ring-bad'); return; }
+      const dupe = DIVIDEND_RECEIPTS.find(r => r.month === month && (!existing || r.id !== existing.id));
+      if (existing) {
+        existing.month = month; existing.amount = amount;
+        showToast('Cobro actualizado.');
+      } else if (dupe) {
+        dupe.amount = amount;
+        showToast(`Ya tenías un cobro de ${fullMonthLabel(month)} — se ha actualizado el importe.`);
+      } else {
+        DIVIDEND_RECEIPTS.push(mkReceipt(month, amount));
+        showToast('Cobro registrado.');
+      }
+      closeModal(); renderDividendsChart(); scheduleGhSave(); renderPanel();
+    });
+  }
+  paint(); backdrop.classList.remove('hidden');
+}
+document.getElementById('btnAddReceipt').addEventListener('click', () => openDividendReceiptModal(null));
 function renderDividends() {
   const grid = document.getElementById('dividendsGrid');
   const rows = [...DIVIDENDS].sort((a, b) => a.symbol.localeCompare(b.symbol));
@@ -2473,7 +2532,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
    16) EXPORTAR / RESTAURAR DATOS (copia de seguridad completa en JSON)
    ========================================================================= */
 function exportData() {
-  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, dividends: DIVIDENDS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ, divSeq: DIV_SEQ };
+  const payload = { version: 2, exportedAt: new Date().toISOString(), categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, dividends: DIVIDENDS, dividendReceipts: DIVIDEND_RECEIPTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ, divSeq: DIV_SEQ, receiptSeq: RECEIPT_SEQ };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2495,12 +2554,14 @@ function tryRestoreFromJSON(rawText) {
     ACCOUNTS = Array.isArray(data.accounts) ? data.accounts.map(a => ({ ...a })) : [];
     ALERTS = Array.isArray(data.alerts) ? data.alerts.map(a => ({ ...a })) : [];
     DIVIDENDS = Array.isArray(data.dividends) ? data.dividends.map(d => ({ ...d })) : [];
+    DIVIDEND_RECEIPTS = Array.isArray(data.dividendReceipts) ? data.dividendReceipts.map(r => ({ ...r })) : [];
     TX_SEQ = data.txSeq || Math.max(0, ...TRANSACTIONS.map(t => t.id || 0), 0);
     REC_SEQ = data.recSeq || Math.max(0, ...RECURRING.map(s => s.id || 0), 0);
     ORDER_SEQ = data.orderSeq || Math.max(100, ...Object.values(CATEGORIES).map(c => c.order || 0));
     ACC_SEQ = data.accSeq || Math.max(0, ...ACCOUNTS.map(a => a.id || 0), 0);
     ALERT_SEQ = data.alertSeq || Math.max(0, ...ALERTS.map(a => a.id || 0), 0);
     DIV_SEQ = data.divSeq || Math.max(0, ...DIVIDENDS.map(d => d.id || 0), 0);
+    RECEIPT_SEQ = data.receiptSeq || Math.max(0, ...DIVIDEND_RECEIPTS.map(r => r.id || 0), 0);
     regenerateAllRecurring();
     setFilter('all', null);
     buildPeriodTabs(); syncControls(); render();
@@ -2654,12 +2715,14 @@ async function ghLoad() {
     if (data && Array.isArray(data.accounts)) ACCOUNTS = data.accounts.map(a => ({ ...a }));
     if (data && Array.isArray(data.alerts)) ALERTS = data.alerts.map(a => ({ ...a }));
     if (data && Array.isArray(data.dividends)) DIVIDENDS = data.dividends.map(d => ({ ...d }));
+    if (data && Array.isArray(data.dividendReceipts)) DIVIDEND_RECEIPTS = data.dividendReceipts.map(r => ({ ...r }));
     TX_SEQ = data.txSeq || TX_SEQ;
     REC_SEQ = data.recSeq || REC_SEQ;
     ORDER_SEQ = data.orderSeq || ORDER_SEQ;
     ACC_SEQ = data.accSeq || ACC_SEQ;
     ALERT_SEQ = data.alertSeq || ALERT_SEQ;
     DIV_SEQ = data.divSeq || DIV_SEQ;
+    RECEIPT_SEQ = data.receiptSeq || RECEIPT_SEQ;
     setSyncStatus('ok');
     ghDataLoaded = true;
   } catch (e) {
@@ -2671,7 +2734,7 @@ async function ghSave() {
   const cfg = getGhConfig();
   if (!cfg || !cfg.token || !cfg.owner || !cfg.repo) return;
   setSyncStatus('guardando');
-  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, dividends: DIVIDENDS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ, divSeq: DIV_SEQ };
+  const payload = { categories: CATEGORIES, transactions: TRANSACTIONS.filter(t => !t.seriesId), recurring: RECURRING, accounts: ACCOUNTS, alerts: ALERTS, dividends: DIVIDENDS, dividendReceipts: DIVIDEND_RECEIPTS, txSeq: TX_SEQ, recSeq: REC_SEQ, orderSeq: ORDER_SEQ, accSeq: ACC_SEQ, alertSeq: ALERT_SEQ, divSeq: DIV_SEQ, receiptSeq: RECEIPT_SEQ };
   const body = { message: 'Actualización automática · ' + new Date().toISOString(), content: utf8ToB64(JSON.stringify(payload, null, 2)), branch: cfg.branch || 'main' };
   if (ghFileSha) body.sha = ghFileSha;
   try {
