@@ -17,7 +17,7 @@ de CSV bancario con autocategorización, y sincronización de datos vía GitHub.
 ┌─────────────────┐        ┌──────────────────────┐        ┌───────────────────────┐
 │  Mac (local)     │        │  github.com/          │        │  github.com/           │
 │  Claude Code     │──push─▶│  primosclub23/gastos  │        │  primosclub23/         │
-│  ~/Desktop/gastos│        │  (público, solo código)│        │  gastos-data (privado) │
+│  Proyectos/gastos│        │  (público, solo código)│        │  gastos-data (privado) │
 └─────────────────┘        └──────────┬────────────┘        └───────────┬────────────┘
                                        │ GitHub Pages                     │ API REST (fetch)
                                        │ auto-build (~1 min)              │ desde el navegador
@@ -108,7 +108,7 @@ Ya NO se reemplaza el `index.html` entero en cada cambio. El ciclo real es:
 2. Claude da el fragmento exacto a buscar/sustituir dentro de `index.html`
    (no el archivo completo).
 3. Se le pasa a **Claude Code**, ya con el repo clonado en
-   `~/Desktop/gastos`, pidiéndole explícitamente que enseñe el `git diff`
+   `~/Desktop/IA/Cerebro/Proyectos/gastos`, pidiéndole explícitamente que enseñe el `git diff`
    antes de comitear.
 4. Revisión del diff línea por línea (no del resumen).
 5. `git add index.html` (nunca `git add .` a ciegas).
