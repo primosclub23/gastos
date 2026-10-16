@@ -418,7 +418,7 @@ const ACCOUNT_COLOR_SWATCHES = ['#E3B341','#D64545','#E8804C','#1F1F1F','#3B6FA6
 /* =========================================================================
    2) DATES / HELPERS
    ========================================================================= */
-const TODAY = '2026-08-13';
+const TODAY = (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })(); // fecha real del dispositivo (zona horaria local), formato AAAA-MM-DD
 const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
 function normalize(str) { return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }

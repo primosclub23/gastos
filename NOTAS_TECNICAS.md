@@ -256,11 +256,14 @@ y VPN Server —WireGuard/OpenVPN— nativos en UGOS Pro). Cuando se tenga:
 
 ## 9. Cosas a vigilar / deuda técnica conocida
 
-- **`TODAY` está fijada a mano** (`const TODAY = '2026-08-13'`, en el código).
-  La app trata esa fecha como "hoy", no la fecha real, así que los cálculos
-  que usan "hoy" (por ejemplo, el "último mes cerrado" de Libertad
-  Financiera) quedarán desfasados hasta que se cambie. Pendiente decidir si se
-  sustituye por la fecha del sistema.
+- **`TODAY` ya no está fijada** (cambio del 16 oct 2026). Antes era
+  `const TODAY = '2026-08-13'` y la app trataba esa fecha como "hoy". Ahora se
+  calcula con la fecha del dispositivo, en zona horaria local y formato
+  `AAAA-MM-DD`. Consecuencias a tener en cuenta: el "último mes cerrado" de
+  Libertad Financiera es siempre el mes anterior al actual; si ese mes no
+  tiene Gastos Fijos registrados, la tarjeta muestra un aviso en vez de un
+  porcentaje; y los movimientos recurrentes se regeneran hasta el mes actual
+  (no se guardan, se recalculan siempre a partir de `recurring`).
 - Los precios dependen de APIs públicas (CoinGecko, Yahoo Finance,
   Frankfurter) llamadas desde el navegador. Si una cambia o limita el uso, el
   botón de precio automático dejará de funcionar (el precio siempre se puede
