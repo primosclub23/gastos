@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#050607">
+<meta name="color-scheme" content="dark">
 <title>Numo</title>
 <link rel="icon" type="image/png" href="favicom.png.png">
 
@@ -13,10 +15,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,450;0,9..144,560;1,9..144,450&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <script>
-  (function () { try { if (localStorage.getItem('numo_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {} })();
-</script>
-
-<script>
   tailwind.config = {
     theme: {
       extend: {
@@ -25,7 +23,7 @@
           ink: 'var(--color-ink)', inkmuted: 'var(--color-inkmuted)', good: 'var(--color-good)', bad: 'var(--color-bad)',
         },
         fontFamily: {
-          display: ['Fraunces', 'serif'], body: ['Inter', 'sans-serif'], mono: ['"JetBrains Mono"', 'monospace'],
+          display: ['-apple-system','BlinkMacSystemFont','"SF Pro Display"','Inter','system-ui','sans-serif'], body: ['-apple-system','BlinkMacSystemFont','"SF Pro Display"','Inter','system-ui','sans-serif'], mono: ['"JetBrains Mono"', 'monospace'],
         },
       }
     }
@@ -34,27 +32,27 @@
 
 <style>
   :root {
-    --color-sand: #F9F6EE; --color-surface: #FFFFFF; --color-surfacealt: #EDEAE1; --color-border: #E1DCD0;
-    --color-border-strong: #C9C2B2; --color-ink: #2C2A26; --color-ink-hover: #423F38; --color-inkmuted: #8A8477;
-    --color-good: #6B8F71; --color-bad: #B15D4A; --color-placeholder: #ADA79A; --color-row-hover: #F9F7F2;
-    --color-surface-hover: #FBFAF7; --color-icon-hover: #F0EDE6;
+    --color-sand: #050607; --color-surface: #101214; --color-surfacealt: rgba(255,255,255,.075); --color-border: rgba(255,255,255,.09);
+    --color-border-strong: rgba(255,255,255,.2); --color-ink: #F5F5F7; --color-ink-hover: #FFFFFF; --color-inkmuted: #8E8E93;
+    --color-good: #63F2C3; --color-bad: #FF8A7A; --color-placeholder: #5C5C61; --color-row-hover: rgba(255,255,255,.04);
+    --color-surface-hover: rgba(255,255,255,.06); --color-icon-hover: rgba(255,255,255,.09);
+    --mint: #63F2C3; --blue: #5AA9FF; --ease: cubic-bezier(.22,1,.36,1); --spring: cubic-bezier(.32,.72,0,1);
   }
-  html[data-theme="dark"] {
-    --color-sand: #14120F; --color-surface: #1E1B16; --color-surfacealt: #28241D; --color-border: #3A342A;
-    --color-border-strong: #4E4838; --color-ink: #F3EFE7; --color-ink-hover: #DAD5C7; --color-inkmuted: #A39C8C;
-    --color-good: #86B08C; --color-bad: #D68872; --color-placeholder: #6E6858; --color-row-hover: #221F19;
-    --color-surface-hover: #242019; --color-icon-hover: #262319;
-  }
-  html { background: var(--color-sand); scroll-behavior: smooth; transition: background .2s ease; }
-  body { font-family: 'Inter', sans-serif; color: var(--color-ink); position: relative; }
-  .grain { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.05; mix-blend-mode: multiply;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
-  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 1.25rem; box-shadow: 0 1px 2px rgba(44,42,38,.03), 0 8px 24px -12px rgba(44,42,38,.06); }
+  html { background: var(--color-sand); color-scheme: dark; scroll-behavior: smooth; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: var(--color-ink); position: relative; background: var(--color-sand); }
+  .font-display { font-style: normal !important; font-weight: 700 !important; letter-spacing: -.035em; }
+  .font-mono { font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace; }
+  .orb { position: fixed; z-index: 0; pointer-events: none; border-radius: 50%; will-change: transform; }
+  .o1 { width: 520px; height: 520px; right: -220px; top: -200px; background: radial-gradient(closest-side, rgba(90,169,255,.22), transparent); animation: drift 18s ease-in-out infinite alternate; }
+  .o2 { width: 460px; height: 460px; left: -230px; top: 28vh; background: radial-gradient(closest-side, rgba(99,242,195,.13), transparent); animation: drift 22s -6s ease-in-out infinite alternate-reverse; }
+  @keyframes drift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-40px,60px,0) scale(1.18); } }
+  @media (prefers-reduced-motion: reduce) { .orb { animation: none !important; } }
+  .card { background: linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.025)); border: 1px solid var(--color-border); border-radius: 1.75rem; backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
   .chip { transition: all .18s ease; border: 1px solid var(--color-border); }
   .chip:hover { border-color: var(--color-border-strong); }
   .chip.active { color: #FFFFFF; border-color: transparent; }
   .pill-tab { transition: all .2s ease; }
-  .pill-tab.active { background: var(--color-surface); box-shadow: 0 1px 3px rgba(44,42,38,.08); }
+  .pill-tab.active { background: rgba(255,255,255,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
   input::placeholder, textarea::placeholder { color: var(--color-placeholder); }
   .fade-in { animation: fadeIn .35s ease both; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -66,11 +64,16 @@
   select.rowcat { border: none; background: transparent; font-size: 12px; color: var(--color-inkmuted); cursor: pointer; }
   .btn-primary { background: var(--color-ink); color: var(--color-sand); }
   .btn-primary:hover { background: var(--color-ink-hover); }
+  .btn-primary { font-weight: 600; }
   .btn-outline { border: 1px solid var(--color-border); color: var(--color-ink); }
   .btn-outline:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
   .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
   .swatch.selected { border-color: var(--color-ink); }
-  .modal-backdrop { background: rgba(0,0,0,.4); }
+  .modal-backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #modalBackdrop .card, #profileMenu { background: #101214; box-shadow: 0 18px 48px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12); }
+  button, .card, .nav-item, .chip { transition-timing-function: var(--ease); }
+  button:active:not(:disabled) { transform: scale(.97); }
+  input, select, textarea { color-scheme: dark; }
   .toggle-btn { transition: all .15s ease; }
   .toggle-btn.active { background: var(--color-ink); color: var(--color-sand); }
   .icon-btn { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; }
@@ -78,10 +81,10 @@
   .icon-btn:disabled { opacity: .25; pointer-events: none; }
 
   /* ---- sidebar ---- */
-  .sidebar { width: 15.5rem; background: var(--color-surface); border-right: 1px solid var(--color-border); }
+  .sidebar { width: 15.5rem; background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03)); border-right: 1px solid var(--color-border); backdrop-filter: blur(30px) saturate(1.8); -webkit-backdrop-filter: blur(30px) saturate(1.8); }
   .nav-item { display: flex; align-items: center; gap: .65rem; padding: .55rem .65rem; border-radius: .65rem; font-size: .875rem; color: var(--color-inkmuted); cursor: pointer; transition: background .15s ease, color .15s ease; text-decoration: none; width: 100%; text-align: left; background: none; border: none; }
   .nav-item:hover { background: var(--color-surfacealt); color: var(--color-ink); }
-  .nav-item.active { background: var(--color-surfacealt); color: var(--color-ink); font-weight: 600; }
+  .nav-item.active { background: linear-gradient(180deg, rgba(255,255,255,.2), rgba(255,255,255,.09)); box-shadow: inset 0 1px 0 rgba(255,255,255,.25); color: var(--color-ink); font-weight: 600; }
   .nav-item svg { flex-shrink: 0; }
   .nav-subitem { padding-left: 2.35rem; font-size: .8125rem; }
   .profile-menu-item { display: flex; align-items: center; gap: .6rem; width: 100%; padding: .55rem .6rem; border-radius: .6rem; font-size: .8125rem; color: var(--color-ink); background: none; border: none; cursor: pointer; text-align: left; }
@@ -94,7 +97,7 @@
 </head>
 
 <body class="min-h-screen">
-<div class="grain"></div>
+<div class="orb o1"></div><div class="orb o2"></div>
 
 <div class="relative z-10 flex min-h-screen">
 
@@ -149,10 +152,6 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
           <span id="privacyLabel">Activar modo privado</span>
         </button>
-        <button id="btnThemeToggle" type="button" class="profile-menu-item">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
-          <span id="themeLabel">Modo oscuro</span>
-        </button>
         <button id="btnSync" type="button" class="profile-menu-item">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           Sincronización
@@ -183,7 +182,7 @@
       <div class="flex items-center gap-3 lg:hidden">
         <img src="logo-numo.png.png" alt="Numo" class="w-12 h-12 rounded-full object-cover shrink-0">
       </div>
-      <h1 class="font-display italic text-4xl sm:text-5xl text-ink" style="font-weight:450;">Financial <span style="color:#D97757;">Dashboard</span></h1>
+      <h1 class="font-display italic text-4xl sm:text-5xl text-ink" style="font-weight:450;">Financial <span style="color:var(--mint);">Dashboard</span></h1>
       <p class="text-inkmuted mt-1.5 text-sm">Ingresos, gastos y ahorro — a tu manera. · <span id="syncStatus" class="font-mono text-xs">⚙ Sin configurar</span></p>
     </div>
     <div class="flex gap-2 flex-wrap justify-end items-start">
@@ -224,7 +223,7 @@
           <p class="money font-display text-3xl text-ink shrink-0" id="fiPercent" style="font-weight:500;">0%</p>
         </div>
         <div class="w-full h-3 rounded-full bg-surfacealt overflow-hidden mb-4">
-          <div id="fiBar" class="h-full rounded-full" style="width:0%; background:#D97757; transition:width .5s ease;"></div>
+          <div id="fiBar" class="h-full rounded-full" style="width:0%; background:var(--mint); transition:width .5s ease;"></div>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div><p class="text-xs text-inkmuted">Ingresos pasivos / mes</p><p class="money font-mono text-sm text-ink mt-0.5" id="fiPassive">0,00 €</p></div>
@@ -760,6 +759,8 @@ function renderKPIs() {
    9) DOUGHNUT CHART
    ========================================================================= */
 function themeVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+// Tooltips claros sobre fondo oscuro: texto oscuro para que se lea
+Chart.defaults.plugins.tooltip.titleColor = '#050607'; Chart.defaults.plugins.tooltip.bodyColor = '#050607';
 function renderDoughnut() {
   const list = txForPeriod().filter(t => t.amount < 0);
   const keys = categoriesInGroup('expense', 'fijo').concat(categoriesInGroup('expense', 'variable')).map(([k]) => k);
@@ -1582,7 +1583,7 @@ function renderFinancialFreedom() {
   const { avgExpenses, avgPassive, pct, month } = financialFreedomStats();
   document.getElementById('fiPercent').textContent = `${pct.toFixed(0)}%`;
   document.getElementById('fiBar').style.width = Math.max(0, Math.min(100, pct)) + '%';
-  document.getElementById('fiBar').style.background = pct >= 100 ? themeVar('--color-good') : '#D97757';
+  document.getElementById('fiBar').style.background = pct >= 100 ? themeVar('--color-good') : themeVar('--mint');
   document.getElementById('fiPassive').textContent = fmtEUR(avgPassive);
   document.getElementById('fiExpenses').textContent = fmtEUR(avgExpenses);
   const caption = document.getElementById('fiCaption');
@@ -1643,7 +1644,7 @@ function renderDividendsChart() {
   dividendsChart = new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets: [{
-      label: 'Dividendos cobrados', data: rows.map(r => r.amount), backgroundColor: '#D97757', borderRadius: 6, maxBarThickness: 46,
+      label: 'Dividendos cobrados', data: rows.map(r => r.amount), backgroundColor: themeVar('--mint'), borderRadius: 6, maxBarThickness: 46,
     }] },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -2644,17 +2645,6 @@ document.getElementById('btnProfile').addEventListener('click', (e) => { e.stopP
 document.addEventListener('click', (e) => { if (!profileMenu.classList.contains('hidden') && !profileMenu.contains(e.target) && e.target.id !== 'btnProfile') profileMenu.classList.add('hidden'); });
 document.getElementById('btnSync').addEventListener('click', () => profileMenu.classList.add('hidden'));
 
-state.theme = (() => { try { return localStorage.getItem('numo_theme') === 'dark' ? 'dark' : 'light'; } catch (e) { return 'light'; } })();
-function applyTheme() {
-  document.documentElement.setAttribute('data-theme', state.theme === 'dark' ? 'dark' : 'light');
-  try { localStorage.setItem('numo_theme', state.theme); } catch (e) {}
-  document.getElementById('themeLabel').textContent = state.theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
-  if (doughnutChart || barChart) { renderDoughnut(); renderBar(); }
-  if (patrimonioChart) renderPatrimonioChart();
-  if (dividendsChart) renderDividendsChart();
-}
-document.getElementById('btnThemeToggle').addEventListener('click', () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; applyTheme(); });
-
 state.privacy = (() => { try { return localStorage.getItem('numo_privacy') === '1'; } catch (e) { return false; } })();
 function applyPrivacy() {
   document.body.classList.toggle('privacy-mode', state.privacy);
@@ -2812,7 +2802,6 @@ document.getElementById('btnSync').addEventListener('click', openSyncModal);
 
 async function initApp() {
   document.getElementById('todayLabel').textContent = 'Hoy · ' + new Date(TODAY).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-  applyTheme();
   applyPrivacy();
   buildViewToggle();
   await ghLoad();

@@ -157,6 +157,17 @@ CoinGecko (precios cripto, en EUR o USD), Yahoo Finance (cotización de
 acciones por ticker), Frankfurter (tipo de cambio USD→EUR) y jsDelivr (iconos
 de criptomonedas, con emoji de respaldo).
 
+## 5c. Diseño visual (desde 2026-10-20)
+
+Numo adopta el estilo de SOLO GASTOS: **solo modo oscuro** (fondo `#050607`),
+tarjetas y barra lateral de cristal (`backdrop-filter`), dos orbes con
+movimiento de fondo (`.orb`), tipografía del sistema (SF/Inter) y acento menta
+(`--mint`). Se eliminó el modo claro beige, su botón y `applyTheme()`; las
+variables `--color-*` siguen existiendo pero con valores oscuros, así que el
+resto del código (Tailwind y Chart.js vía `themeVar`) no cambió. Los tooltips de
+Chart.js son claros con texto oscuro (`Chart.defaults`). Los colores de las
+categorías son datos del usuario y no se tocaron.
+
 ## 6. Flujo de actualización del código (a partir de ahora)
 
 Ya NO se reemplaza el `index.html` entero en cada cambio. El ciclo real es:
